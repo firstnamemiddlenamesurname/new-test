@@ -1,0 +1,4604 @@
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\convention.py
+----------------------------------------
+from datetime import datetime, date, timedelta
+from typing import Dict, List, Optional, Union, Callable
+
+import pandas as pd  # type: ignore
+from dateutil.relativedelta import relativedelta
+from .core import Ccy, Tenor, InflationIndex
+
+
+def _lin_interp_dates(curve: Dict[date, float], value_date):
+    dates = sorted(list(curve.keys()))
+    value_date = pd.Timestamp(value_date)
+    if value_date <= pd.Timestamp(dates[0]):
+        return curve[dates[0]]
+    if value_date >= pd.Timestamp(dates[-1]):
+        return curve[dates[-1]]
+    else:
+        before_rate, after_rate, before, after = 0.0, 0.0, value_date, value_date
+        for d in dates:
+            if value_date <= pd.Timestamp(d):
+                after = pd.Timestamp(d)
+                after_rate = curve[d]
+                break
+            else:
+                before = pd.Timestamp(d)
+                before_rate = curve[d]
+
+        return before_rate + (max(timedelta(days=0), (value_date - before)) /
+                              (after - before) * (after_rate - before_rate))
+
+
+class Conventions:
+    DATE_OFFSET = {
+        Tenor.SPOT: relativedelta(days=0),
+        Tenor.T_0D: relativedelta(days=0),
+        Tenor.T_1D: relativedelta(days=1),
+        Tenor.T_2D: relativedelta(days=2),
+        Tenor.T_3D: relativedelta(days=3),
+        Tenor.T_4D: relativedelta(days=4),
+        Tenor.T_5D: relativedelta(days=5),
+        Tenor.T_6D: relativedelta(days=6),
+        Tenor.T_7D: relativedelta(days=7),
+        Tenor.T_14D: relativedelta(days=14),
+        Tenor.T_21D: relativedelta(days=21),
+        Tenor.T_1W: relativedelta(weeks=1),
+        Tenor.T_2W: relativedelta(weeks=2),
+        Tenor.T_3W: relativedelta(weeks=3),
+        Tenor.T_1M: relativedelta(months=1),
+        Tenor.T_2M: relativedelta(months=2),
+        Tenor.T_3M: relativedelta(months=3),
+        Tenor.T_4M: relativedelta(months=4),
+        Tenor.T_5M: relativedelta(months=5),
+        Tenor.T_6M: relativedelta(months=6),
+        Tenor.T_7M: relativedelta(months=7),
+        Tenor.T_8M: relativedelta(months=8),
+        Tenor.T_9M: relativedelta(months=9),
+        Tenor.T_10M: relativedelta(months=10),
+        Tenor.T_11M: relativedelta(months=11),
+        Tenor.T_1Y: relativedelta(years=1),
+        Tenor.T_13M: relativedelta(months=13),
+        Tenor.T_14M: relativedelta(months=14),
+        Tenor.T_15M: relativedelta(months=15),
+        Tenor.T_16M: relativedelta(months=16),
+        Tenor.T_17M: relativedelta(months=17),
+        Tenor.T_18M: relativedelta(months=18),
+        Tenor.T_21M: relativedelta(months=21),
+        Tenor.T_2Y: relativedelta(years=2),
+        Tenor.T_3Y: relativedelta(years=3),
+        Tenor.T_4Y: relativedelta(years=4),
+        Tenor.T_5Y: relativedelta(years=5),
+        Tenor.T_6Y: relativedelta(years=6),
+        Tenor.T_7Y: relativedelta(years=7),
+        Tenor.T_8Y: relativedelta(years=8),
+        Tenor.T_9Y: relativedelta(years=9),
+        Tenor.T_10Y: relativedelta(years=10),
+        Tenor.T_11Y: relativedelta(years=11),
+        Tenor.T_12Y: relativedelta(years=12),
+        Tenor.T_13Y: relativedelta(years=13),
+        Tenor.T_14Y: relativedelta(years=14),
+        Tenor.T_15Y: relativedelta(years=15),
+        Tenor.T_20Y: relativedelta(years=20),
+        Tenor.T_25Y: relativedelta(years=25),
+        Tenor.T_30Y: relativedelta(years=30),
+        Tenor.T_35Y: relativedelta(years=35),
+        Tenor.T_40Y: relativedelta(years=40),
+        Tenor.T_45Y: relativedelta(years=45),
+        Tenor.T_50Y: relativedelta(years=50),
+        Tenor.T_60Y: relativedelta(years=60)
+    }
+    INFLATION_INDEX_TO_CCY_MAPPING = {
+        InflationIndex.CPURNSA: Ccy.USD,
+        InflationIndex.AUCPI: Ccy.AUD,
+        InflationIndex.CPTFEMU: Ccy.EUR,
+        InflationIndex.JCPNJGBI: Ccy.JPY,
+        InflationIndex.UKRPI: Ccy.GBP,
+        InflationIndex.ITCPIUNR: Ccy.EUR,
+        InflationIndex.FRCPXTOB: Ccy.EUR,
+        InflationIndex.SPIPC: Ccy.EUR
+    }
+
+    def __init__(self, calendars: Optional[Dict[Ccy, List[datetime]]] = None) -> None:
+
+        self.calendars = {}  # type: Dict[Ccy, List[datetime]]
+        if calendars:
+            for c in Ccy:
+                self.calendars[c] = calendars.get(c, [])
+        else:
+            self.calendars = {c: [] for c in Ccy}
+        super().__init__()
+
+    @staticmethod
+    def ref_rate(ccy: Ccy, ins_type: type = None, tenor: Optional[Tenor] = None) -> Tenor:
+        if ccy == Ccy.AUD:
+            if tenor is not None and tenor <= Tenor.T_3Y:
+                return Tenor.T_3M
+            else:
+                return Tenor.T_6M
+        elif ccy in [Ccy.GBP, Ccy.EUR, Ccy.JPY, Ccy.PLN, Ccy.HUF, Ccy.SGD, Ccy.THB, Ccy.CHF, Ccy.NOK]:
+            return Tenor.T_6M
+        elif ccy == Ccy.CNY:
+            return Tenor.T_1W
+        else:
+            return Tenor.T_3M
+
+    @staticmethod
+    def ccs_ref_rate(ccy: Ccy) -> Tenor:
+        if ccy in (Ccy.INR, Ccy.INO, Ccy.KRW):
+            return Tenor.T_6M
+        else:
+            return Tenor.T_3M
+
+
+    @staticmethod
+    def swaption_delivery_is_cash(ccy: Ccy) -> bool:
+        if ccy in (Ccy.TWD, Ccy.NTO):
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def fixed_coup_freq(ccy: Ccy) -> Tenor:
+        return Tenor.T_6M if ccy in (Ccy.INR, Ccy.INO) else Tenor.T_1Y
+
+    def dates_to_tenor(self, start: Union[datetime, date], end: Union[datetime, date]) -> Tenor:
+        def key_func(x):
+            try:
+                return abs(pd.Timestamp(end) - self.date_from_tenor(start, x))
+            except KeyError:
+                return timedelta(days=99999)  # todo: Hack to only use the tenors in the date_from_tenor function
+        return min([t for t in Tenor], key=key_func)
+
+    def add_date_offset(self, ref_date: datetime, offset: relativedelta,
+                        holiday_calendar: Optional[Union[Ccy, List[Ccy]]],
+                        workday: bool = True) -> pd.Timestamp:
+        holidays = []
+        if holiday_calendar:
+            if type(holiday_calendar) == Ccy:
+                holidays = self.calendars[holiday_calendar]
+            elif type(holiday_calendar) == list:
+                holidays = [h for c in holiday_calendar for h in self.calendars[c]]
+        partial_offset = relativedelta(years=offset.years, months=offset.months)
+        ret_date = ref_date + partial_offset
+        days = offset.days
+
+        if workday and ret_date.weekday() > 4:
+            if ref_date + partial_offset >= ref_date:
+                ret_date = ret_date + relativedelta(days=max(0, ret_date.weekday() - 4))
+            else:
+                ret_date = ret_date + relativedelta(days=min(0, 4 - ret_date.weekday()))
+        if holiday_calendar and partial_offset != 0:
+            if ref_date + partial_offset >= ref_date:
+                while pd.Timestamp(ret_date) in holidays or (workday and ret_date.weekday() > 4):
+                    ret_date = ret_date + relativedelta(days=1)
+
+            else:
+                while pd.Timestamp(ret_date) in holidays or (workday and ret_date.weekday() > 4):
+                    ret_date = ret_date + relativedelta(days=-1)
+
+        if days > 0:
+            for i in range(0, days):
+                ret_date = ret_date + relativedelta(days=1)
+                if holiday_calendar:
+                    while pd.Timestamp(ret_date) in holidays or (workday and ret_date.weekday() > 4):
+                        ret_date = ret_date + relativedelta(days=1)
+        elif days < 0:
+            for i in range(0, -days):
+                ret_date = ret_date + relativedelta(days=-1)
+                if holiday_calendar:
+                    while pd.Timestamp(ret_date) in holidays or (workday and ret_date.weekday() > 4):
+                        ret_date = ret_date + relativedelta(days=-1)
+
+        return pd.Timestamp(ret_date)
+
+    def date_from_tenor(self, ref_date: datetime, tenor: Tenor,
+                        holiday_calendar: Optional[Union[List[Ccy], Ccy]] = None,
+                        workday=True):
+        return self.add_date_offset(ref_date, self.DATE_OFFSET[tenor], holiday_calendar, workday)
+
+    @staticmethod
+    def get_base_ccy(ccy: Ccy):
+        if ccy in (Ccy.PLN, Ccy.HUF):
+            return Ccy.EUR
+        return Ccy.USD
+
+    @staticmethod
+    def which_base(ccy1: Ccy, ccy2: Ccy):
+        reverse_ccy = [Ccy.GBP, Ccy.EUR, Ccy.AUD, Ccy.NZD]
+        if ccy1 != Ccy.USD and ccy2 != Ccy.USD:
+            raise ValueError('Can only determine base currency if at least one of the currencies is USD')
+        if ccy1 in reverse_ccy:
+            return Ccy.USD
+        elif ccy2 in reverse_ccy:
+            return ccy2
+        else:
+            return Ccy.USD
+
+    @staticmethod
+    def trades_as_ndf(ccy: Ccy):
+        if ccy in [Ccy.KRW, Ccy.PHP, Ccy.INR, Ccy.INO, Ccy.CNY, Ccy.MYR, Ccy.IDR, Ccy.TWD, Ccy.NTO]:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def trades_as_mtm_xccy(ccy: Ccy) -> bool:
+        if ccy in [Ccy.GBP, Ccy.EUR, Ccy.ZAR, Ccy.PLN, Ccy.HUF, Ccy.AUD, Ccy.JPY, Ccy.CAD, Ccy.NZD, Ccy.SEK, Ccy.SGD]:
+            return True
+        else:
+            return False
+
+
+    @staticmethod
+    def ccs_fx_spot_ref(ccy: Ccy) -> bool:
+        if ccy in [Ccy.TRY]:
+            return True
+        else:
+            return False
+
+
+    def inf_index_rule(self, index: InflationIndex) -> Callable[[datetime, Optional[Dict[datetime, float]],
+                                                                 Optional[bool]], Union[datetime, float]]:
+        def us_rule(ccy: Ccy) -> Callable[[datetime, Optional[Dict[datetime, float]], Optional[bool]],
+                                          Union[datetime, float]]:
+            def rule(ref_date: datetime, history: Optional[Dict[datetime, float]] = None,
+                     value: Optional[bool] = True) -> Union[datetime, float]:
+                idx_date = self.add_date_offset(ref_date, relativedelta(months=-3), ccy)
+                if not value:
+                    return idx_date
+                else:
+                    return _lin_interp_dates(history, idx_date)
+
+            return rule
+
+        def au_rule() -> Callable[[datetime, Optional[Dict[datetime, float]], Optional[bool]], Union[datetime, float]]:
+            def rule(ref_date: datetime, history: Optional[Dict[datetime, float]] = None,
+                     value: Optional[bool] = True) -> Union[datetime, float]:
+                month = (int((ref_date.month - 1) / 3) * 3 + 11) % 12 + 1
+                year = ref_date.year if month < 10 else ref_date.year - 1
+                idx_date = pd.Timestamp(day=1, year=year, month=month)
+                if not value:
+                    return idx_date
+                else:
+                    return _lin_interp_dates(history, idx_date)
+
+            return rule
+
+        rules = {InflationIndex.CPURNSA: us_rule(self.inf_index_to_ccy(InflationIndex.CPURNSA)),
+                 InflationIndex.UKRPI: us_rule(self.inf_index_to_ccy(InflationIndex.UKRPI)),
+                 InflationIndex.SPIPC: us_rule(self.inf_index_to_ccy(InflationIndex.SPIPC)),
+                 InflationIndex.JCPNJGBI: us_rule(self.inf_index_to_ccy(InflationIndex.JCPNJGBI)),
+                 InflationIndex.ITCPIUNR: us_rule(self.inf_index_to_ccy(InflationIndex.ITCPIUNR)),
+                 InflationIndex.FRCPXTOB: us_rule(self.inf_index_to_ccy(InflationIndex.FRCPXTOB)),
+                 InflationIndex.AUCPI: au_rule(),
+                 InflationIndex.CPTFEMU: us_rule(self.inf_index_to_ccy(InflationIndex.CPTFEMU))
+                 }
+
+        return rules[index]
+
+    @classmethod
+    def inf_index_to_ccy(cls, index: InflationIndex) -> Ccy:
+        return cls.INFLATION_INDEX_TO_CCY_MAPPING[index]
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\core.py
+----------------------------------------
+from __future__ import annotations
+
+import datetime
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import Optional
+
+from firm_domain.util.datehelper import next_imm_date_rates
+from firm_domain.util.fileutils import JsonSerialiserBase
+from .core_tenor import TenorEnum, TenorMeta
+from .printable_enum import PrintableEnum
+
+
+class Ccy(PrintableEnum):
+    EUR = auto()
+    GBP = auto()
+    AUD = auto()
+    NZD = auto()
+    USD = auto()
+    CAD = auto()
+    CHF = auto()
+    NOK = auto()
+    SEK = auto()
+    JPY = auto()
+    KRW = auto()
+    CNO = auto()
+    CNY = auto()
+    CNH = auto()
+    HKD = auto()
+    TWD = auto()
+    NTO = auto()
+    SGD = auto()
+    MYR = auto()
+    PHP = auto()
+    IDR = auto()
+    THB = auto()
+    INR = auto()
+    INO = auto()
+    ILS = auto()
+    TRY = auto()
+    ZAR = auto()
+    RUB = auto()
+    PLN = auto()
+    HUF = auto()
+    DKK = auto()
+    CZK = auto()
+    BRL = auto()
+    MXN = auto()
+    CLP = auto()
+    PEN = auto()
+    AED = auto()
+    SAR = auto()
+    XAU = auto()
+    XAG = auto()
+
+    def as_json_object(self, serialiser: JsonSerialiserBase):
+        return str(self)
+
+
+_MONTH_CODES = {  # used only internally in this module
+    0: 'F',
+    1: 'G',
+    2: 'H',
+    3: 'J',
+    4: 'K',
+    5: 'M',
+    6: 'N',
+    7: 'Q',
+    8: 'U',
+    9: 'V',
+    10: 'X',
+    11: 'Z'
+}
+
+
+class Month(PrintableEnum):
+    JAN = 0
+    F = 0
+    FEB = 1
+    G = 1
+    MAR = 2
+    H = 2
+    APR = 3
+    J = 3
+    MAY = 4
+    K = 4
+    JUN = 5
+    M = 5
+    JUL = 6
+    N = 6
+    AUG = 7
+    Q = 7
+    SEP = 8
+    U = 8
+    OCT = 9
+    V = 9
+    NOV = 10
+    X = 10
+    DEC = 11
+    Z = 11
+
+    def code(self):
+        return _MONTH_CODES[self.value]
+
+
+class Tenor(PrintableEnum, TenorEnum, metaclass=TenorMeta):
+
+    def __str__(self) -> str:
+        return self.name[self.name.find('_') + 1:]
+
+    SPOT = -1
+    T_0D = auto()
+    T_1D = auto()
+    T_1B = auto()  # alias
+    T_2D = auto()
+    T_3D = auto()
+    T_4D = auto()
+    T_5D = auto()
+    T_6D = auto()
+    T_1W = auto()
+    T_2W = auto()
+    T_3W = auto()
+    T_7D = auto()  # alias
+    T_14D = auto()  # alias
+    T_21D = auto()  # alias
+    T_1M = auto()
+    T_2M = auto()
+    T_3M = auto()
+    T_4M = auto()
+    T_5M = auto()
+    T_6M = auto()
+    T_7M = auto()
+    T_8M = auto()
+    T_9M = auto()
+    T_10M = auto()
+    T_11M = auto()
+    T_1Y = auto()
+    T_12M = auto()  # alias
+    T_13M = auto()
+    T_14M = auto()
+    T_15M = auto()
+    T_16M = auto()
+    T_17M = auto()
+    T_18M = auto()
+    T_21M = auto()
+    T_2Y = auto()
+    T_24M = auto()  # alias
+    T_3Y = auto()
+    T_36M = auto()  # alias
+    T_4Y = auto()
+    T_48M = auto()  # alias
+    T_5Y = auto()
+    T_60M = auto()  # alias
+    T_6Y = auto()
+    T_7Y = auto()
+    T_8Y = auto()
+    T_9Y = auto()
+    T_10Y = auto()
+    T_11Y = auto()
+    T_12Y = auto()
+    T_13Y = auto()
+    T_14Y = auto()
+    T_15Y = auto()
+    T_20Y = auto()
+    T_25Y = auto()
+    T_30Y = auto()
+    T_35Y = auto()
+    T_40Y = auto()
+    T_45Y = auto()
+    T_50Y = auto()
+    T_60Y = auto()
+
+    @classmethod
+    def parse(cls, v) -> Tenor:
+        assert isinstance(v, str)
+        return cls[f'T_{v.upper()}']
+
+
+@dataclass(frozen=True)
+class ECB:
+    idx: int
+
+    def __repr__(self):
+        return f'{self.idx}'
+
+    def __gt__(self, other):
+        assert isinstance(other, type(self))
+        return self.idx > other.idx
+
+    def __ge__(self, other):
+        assert isinstance(other, type(self))
+        return self.idx >= other.idx
+
+    def __lt__(self, other):
+        assert isinstance(other, type(self))
+        return self.idx < other.idx
+
+    def __le__(self, other):
+        assert isinstance(other, type(self))
+        return self.idx <= other.idx
+
+
+@dataclass(frozen=True)
+class IMM:
+    month: Month
+    year: int
+    ith: Optional[int] = None
+
+    def __repr__(self):
+        return f'{self.month.code()}{self.year}'
+
+    def __gt__(self, other):
+        assert isinstance(other, type(self))
+        return (self.year, self.month) > (other.year, other.month)
+
+    def __ge__(self, other):
+        assert isinstance(other, type(self))
+        return (self.year, self.month) >= (other.year, other.month)
+
+    def __lt__(self, other):
+        assert isinstance(other, type(self))
+        return (self.year, self.month) < (other.year, other.month)
+
+    def __le__(self, other):
+        assert isinstance(other, type(self))
+        return (self.year, self.month) <= (other.year, other.month)
+
+    @classmethod
+    def parse(cls, v) -> IMM:
+        *_, code = v.split()
+        assert len(code) == 3
+        month_code, year_code = code[0], code[1:]
+        month = Month[month_code]
+        year = 2000 + int(year_code)
+        return cls(month, year)
+
+
+class GenericIMM:
+    def __init__(self, ith: int, days_shift: int = 7):  # jchi@202003 by default rolls 7 days before actual IMM date
+        self.ith = ith
+        self.shift = datetime.timedelta(days=int(days_shift))
+
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(ith={self.ith}, days_shift={self.shift.days})'
+
+    def go_specific(self) -> IMM:
+        ref_date = datetime.date.today() + self.shift
+        imm_date = next_imm_date_rates(ref_date, self.ith)
+        return IMM(Month(imm_date.month - 1), imm_date.year, self.ith)
+
+
+class FutureExpiry(IMM):
+    def __gt__(self, other):
+        if isinstance(other, Tenor):
+            return False
+        return super().__gt__(other)
+
+    def __ge__(self, other):
+        if isinstance(other, Tenor):
+            return False
+        return super().__ge__(other)
+
+    def __lt__(self, other):
+        if isinstance(other, Tenor):
+            return True
+        return super().__lt__(other)
+
+    def __le__(self, other):
+        if isinstance(other, Tenor):
+            return True
+        return super().__le__(other)
+
+
+class SwaptionType(Enum):
+    PAYER = auto()
+    RECEIVER = auto()
+
+
+class CapFloorType(Enum):
+    CAP = auto()
+    FLOOR = auto()
+
+
+class OptionStrat(Enum):
+    STRAD = auto()
+    RR = auto()
+    FLY = auto()
+
+
+class OptionType(Enum):
+    CALL = auto()
+    PUT = auto()
+    DIGITAL_CALL = auto()
+    DIGITAL_PUT = auto()
+
+
+class InflationIndex(Enum):
+    CPURNSA = auto()
+    AUCPI = auto()
+    CPTFEMU = auto()
+    JCPNJGBI = auto()
+    UKRPI = auto()
+    ITCPIUNR = auto()
+    FRCPXTOB = auto()
+    SPIPC = auto()
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SabrCoefficient(Enum):
+    ALPHA = auto()
+    BETA = auto()
+    RHO = auto()
+    NU = auto()
+
+    @classmethod
+    def parse(cls, v) -> SabrCoefficient:
+        assert isinstance(v, str)
+        return cls[v.upper()]
+
+
+class Country(PrintableEnum):
+    """
+    Warning: Renaming NAMES or VALUES of these enums or DELETING enums may have adverse side-effects on the data
+    already stored on database
+
+    PLEASE DO NOT TOUCH !!!!!!!
+    """
+    AT = 'Austria'
+    BE = 'Belgium'
+    DE = 'Deutsche'
+    ES = 'Espanol'
+    FI = 'Finland'
+    FR = 'France'
+    GB = 'UnitedKingdom'
+    IE = 'Ireland'
+    IT = 'Italy'
+    NL = 'Netherlands'
+    PT = 'Portugal'
+    SI = 'Slovenia'
+    XS = 'Cyprus'
+    US = 'UnitedStates'
+    GR = 'Greece'
+    LU = 'Luxembourg'
+
+    def as_json_object(self, serialiser: JsonSerialiserBase):
+        return str(self)
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\core_tenor.py
+----------------------------------------
+from enum import Enum, EnumMeta
+
+ONE_DAY_APPROX = round(48 / (365 * 4 + 1), 12)  # add a leap day for every 4 years
+ONE_WEEK_APPROX = ONE_DAY_APPROX * 7
+
+
+class TenorUnit(Enum):
+    D = B = DAY = ONE_DAY_APPROX
+    W = WEEK = ONE_WEEK_APPROX
+    M = MONTH = 1
+    Y = YEAR = 12
+
+
+def _tenor_value(tenor_str: str) -> int:  # e.g. tenor_str = "T_24M"
+    size = int(tenor_str[2:-1])
+    unit = TenorUnit[tenor_str[-1]]
+    return size * unit.value
+
+
+class TenorMeta(EnumMeta):
+    def __new__(metacls, cls, bases, cls_dct):
+        for year in range(1, 31):  # auto-fill year range
+            year_tag = f'T_{year}Y'
+            if year_tag not in cls_dct:
+                cls_dct[year_tag] = _tenor_value(year_tag)
+        for month in range(1, 361):  # auto-fill month range
+            month_tag = f'T_{month}M'
+            if month_tag not in cls_dct:
+                cls_dct[month_tag] = _tenor_value(month_tag)
+        for week in range(1, 5):  # auto-fill week range
+            week_tag = f'T_{week}W'
+            if week_tag not in cls_dct:
+                cls_dct[week_tag] = _tenor_value(week_tag)
+        for day in range(29):  # auto-fill day range
+            day_tag = f'T_{day}D'
+            if day_tag not in cls_dct:
+                cls_dct[day_tag] = _tenor_value(day_tag)
+
+        return super().__new__(metacls, cls, bases, cls_dct)
+
+
+class TenorEnum(Enum):
+    def _generate_next_value_(name: str, *args, **kwargs) -> int:  # type: ignore
+        try:
+            return _tenor_value(name)
+        except:
+            return Enum._generate_next_value_(name, *args, **kwargs)
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\instrument.py
+----------------------------------------
+from dataclasses import dataclass
+from typing import List, Optional
+
+from .convention import Conventions
+from .core import Ccy, Tenor, IMM, OptionStrat, InflationIndex, Month, FutureExpiry, OptionType, ECB
+
+
+def to_tenor(t: str) -> Tenor:
+    if t == 'SPOT':
+        return Tenor.SPOT
+    return Tenor['T_' + t]
+
+
+class Instrument():
+    ccy: Ccy
+    tenor: Tenor
+
+    def __lt__(self, other):
+        return str(self) < str(other)
+
+    def replace(self, **kwargs):
+        kwd = {**vars(self), **kwargs}
+        return type(self)(**kwd)
+
+
+@dataclass(frozen=True)
+class Stock(Instrument):
+    ccy: Ccy
+    ticker: str
+    isin: str
+
+
+@dataclass(frozen=True)
+class Rate(Instrument):
+    ccy: Ccy
+    tenor: Tenor
+
+    def __repr__(self):
+        return f'{type(self).__name__}_{self.ccy}_{self.tenor}'
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], Tenor[data[1]])
+
+
+@dataclass(frozen=True)
+class FRA(Instrument):
+    ccy: Ccy
+    tenor: Tenor
+    start: Optional[Tenor]
+
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return 'FRA_{c}_{s}_{t}'.format(c=self.ccy, s=disp_start, t=self.tenor)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[2]), to_tenor(data[1]))
+
+
+@dataclass(frozen=True)
+class IMMFRA(Instrument):
+    ccy: Ccy
+    tenor: Tenor
+    start: Optional[IMM]
+
+    def __repr__(self) -> str:
+        return 'IMMFRA_{c}_{s}_{t}'.format(c=self.ccy, s=self.start, t=self.tenor)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[2]), IMM(Month[data[1][0]], int(data[1][1:])))
+
+
+@dataclass(frozen=True)
+class FXForward(Instrument):
+    ccy: Ccy
+    tenor: Optional[Tenor]
+    ccy_base: Optional[Ccy] = None
+
+    def __post_init__(self):
+        if self.ccy_base is None:
+            other = Conventions.get_base_ccy(self.ccy)
+        else:
+            other = self.ccy_base
+        if self.ccy < other:
+            object.__setattr__(self, 'ccy_base', self.ccy)
+            object.__setattr__(self, 'ccy', other)
+        else:
+            object.__setattr__(self, 'ccy_base', other)
+
+    def __repr__(self) -> str:
+        disp_tenor = 'SPOT' if self.tenor == Tenor.SPOT else self.tenor
+        return f'FXForward_{self.ccy_base}{self.ccy}_{disp_tenor}'
+
+    def ccy_cals(self) -> List[Ccy]:
+        return [Ccy.USD, self.ccy]
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[1]))
+
+
+class FXForwardOutright(FXForward):
+    def __repr__(self) -> str:
+        return super().__repr__().replace('FXForward_', 'FXForwardOutright_')
+
+
+@dataclass(frozen=True)
+class FXOption(Instrument):
+    ccy: Ccy
+    expiry: Tenor
+    strat_type: OptionStrat
+    delta: float = 0
+    ccy_base: Optional[Ccy] = None
+
+    def __post_init__(self):
+        if self.ccy_base is None:
+            other = Conventions.get_base_ccy(self.ccy)
+        else:
+            other = self.ccy_base
+        if self.ccy < other:
+            object.__setattr__(self, 'ccy_base', self.ccy)
+            object.__setattr__(self, 'ccy', other)
+        else:
+            object.__setattr__(self, 'ccy_base', other)
+
+    def __repr__(self) -> str:
+        return f'FXOption_{self.ccy_base}{self.ccy}_{self.expiry}_{self.strat_type}_{self.delta:.2f}'
+
+    def ccy_cals(self) -> List[Ccy]:
+        return [Ccy.USD, self.ccy]
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0][3:]], to_tenor(data[1]), OptionStrat[data[2]], float(data[3]), Ccy[data[0][:3]])
+
+
+@dataclass(frozen=True)
+class Swap(Instrument):
+    ccy: Ccy
+    tenor: Optional[Tenor]
+    start: Optional[Tenor] = Tenor.SPOT
+
+
+@dataclass(frozen=True)
+class OIS(Swap):
+    fixed_freq: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if self.fixed_freq is None:
+            object.__setattr__(self, 'fixed_freq', Conventions.fixed_coup_freq(self.ccy))
+
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return 'OIS_{c}_{s}_{t}_{f}'.format(c=self.ccy, s=disp_start, t=self.tenor, f=self.fixed_freq)
+
+    @property
+    def index_rate(self):
+        return Rate(self.ccy, Tenor.T_1D)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[2]), to_tenor(data[1]))
+
+
+@dataclass(frozen=True)
+class IMMOIS(Instrument):
+    ccy: Ccy
+    start: IMM
+    tenor: IMM = None
+
+    def __repr__(self) -> str:
+        return f"IMMOIS_{self.ccy}_{self.start}"
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], IMM(Month[data[1][0]], int(data[1][1:])))
+
+
+@dataclass(frozen=True)
+class ECBOIS(Instrument):
+    ccy: Ccy
+    start: ECB
+    tenor: ECB = None
+
+    def __repr__(self) -> str:
+        return f"ECBOIS_{self.ccy}_{self.start}"
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], ECB(int(data[1])))
+
+
+@dataclass(frozen=True)
+class IRS(Swap):
+    idx: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if self.idx is None:
+            object.__setattr__(self, 'idx', Conventions.ref_rate(self.ccy, IRS, self.tenor))
+
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return f"Swap_{self.ccy}_{disp_start}_{self.tenor}_{self.idx}"
+
+    @property
+    def index_rate(self):
+        return Rate(self.ccy, self.idx)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[2]), to_tenor(data[1]))
+
+
+@dataclass(frozen=True)
+class Swaption(Instrument):
+    ccy: Ccy
+    expiry: Optional[Tenor]
+    tenor: Optional[Tenor]
+    strike: float = 0.
+    idx: Optional[Tenor] = None
+
+    def __repr__(self) -> str:
+        return 'Swaption_{c}_{e}_{t}'.format(c=self.ccy, e=self.expiry, t=self.tenor)
+
+    def get_swap(self) -> IRS:
+        return IRS(self.ccy, self.tenor, self.expiry, idx=self.idx)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[1]), to_tenor(data[2]))
+
+
+class XccyBasis(Swap):
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return 'XccyBasis_{c}_{s}_{t}'.format(c=self.ccy, s=disp_start, t=self.tenor)
+
+    def ccy_cals(self) -> List[Ccy]:
+        return [Ccy.USD, self.ccy]
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[2]), to_tenor(data[1]))
+
+
+class CrossCurrencySwap(Swap):
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return 'CrossCurrencySwap_{c}_{s}_{t}'.format(c=self.ccy, s=disp_start, t=self.tenor)
+
+    def ccy_cals(self) -> List[Ccy]:
+        return [Ccy.USD, self.ccy]
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[2]), to_tenor(data[1]))
+
+
+@dataclass(frozen=True)
+class CCSSwaption(Instrument):
+    ccy: Ccy
+    expiry: Optional[Tenor]
+    tenor: Optional[Tenor]
+
+    def __repr__(self) -> str:
+        return 'CCSSwaption_{c}_{e}_{t}'.format(c=self.ccy, e=self.expiry, t=self.tenor)
+
+    def get_swap(self) -> CrossCurrencySwap:
+        return CrossCurrencySwap(self.ccy, self.tenor, self.expiry)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[1]), to_tenor(data[2]))
+
+
+@dataclass(frozen=True)
+class TenorBasis(Swap):
+    idx_1: Optional[Tenor] = None
+    idx_2: Optional[Tenor] = None
+
+    def __init__(self, ccy: Ccy, tenor: Optional[Tenor], idx_1: Optional[Tenor], idx_2: Optional[Tenor] = None,
+                 start: Optional[Tenor] = Tenor.SPOT) -> None:
+        if idx_2 is None:
+            idx_2 = Conventions.ref_rate(ccy)
+        if idx_1 == idx_2:
+            raise ValueError("Can't create a TenorBasis Swap with identical floating index")
+
+        object.__setattr__(self, 'idx_1', min(idx_1, idx_2))
+        object.__setattr__(self, 'idx_2', max(idx_1, idx_2))
+
+        super().__init__(ccy, tenor, start)
+
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return 'TenorBasis_{c}_{i1}_{i2}_{s}_{t}'.format(c=self.ccy, i1=self.idx_1, i2=self.idx_2,
+                                                         s=disp_start, t=self.tenor)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(Ccy[data[0]], to_tenor(data[4]), to_tenor(data[1]), to_tenor(data[2]), to_tenor(data[3]))
+
+
+@dataclass(frozen=True)
+class InflationSwap(Swap):
+    index: Optional[InflationIndex] = None
+
+    def __init__(self, index: InflationIndex, tenor: Optional[Tenor], start: Optional[Tenor] = Tenor.SPOT) -> None:
+        object.__setattr__(self, 'index', index)
+        ccy = Conventions.inf_index_to_ccy(index)
+        super().__init__(ccy, tenor, start)
+
+    def __repr__(self) -> str:
+        disp_start = 'SPOT' if self.start == Tenor.SPOT else self.start
+        return 'InfZCSwap_{c}_{i}_{s}_{t}'.format(c=self.ccy, i=self.index, s=disp_start, t=self.tenor)
+
+    @classmethod
+    def from_data(cls, data: List[str]):
+        return cls(InflationIndex[data[1]], to_tenor(data[3]), to_tenor(data[2]))
+
+
+@dataclass(unsafe_hash=True)
+class RatesFuture(Instrument):
+    ccy: Ccy
+    tenor: Optional[FutureExpiry]
+    idx: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if self.idx is None:
+            self.idx = Conventions.ref_rate(self.ccy)
+
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}_{self.ccy}{self.idx}_{self.tenor}'
+
+
+@dataclass(unsafe_hash=True)
+class RatesFutureOption(Instrument):
+    ccy: Ccy
+    strike: float
+    option_type: OptionType
+    expiry: Optional[FutureExpiry]
+    idx: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.option_type, str):
+            self.option_type = OptionType[self.option_type]
+        if self.idx is None:
+            self.idx = Conventions.ref_rate(self.ccy)
+
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}_{self.ccy}{self.idx}_{self.expiry}_{self.option_type.name}'
+
+
+class BondPlaceHolder(Instrument):
+    """
+    jchi@201912
+    This is a placeholder class that is to be extended in f3-shared
+    """
+    name: str
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\instrument_spot.py
+----------------------------------------
+from functools import singledispatch
+from typing import Union
+from .instrument import Tenor, Instrument, Swap, IRS, OIS, FXOption, FXForward, Swaption, XccyBasis, \
+    CrossCurrencySwap, TenorBasis, InflationSwap
+
+
+@singledispatch
+def instrument_to_spot(inst: Instrument) -> Union[Swap, FXOption, FXForward]:
+    raise TypeError(f'expect Instrument object, got type {type(inst)} instead')
+
+
+@instrument_to_spot.register
+def instrument_to_spot_ois(ois: OIS) -> OIS:
+    if ois.start is Tenor.SPOT:
+        return ois
+    return OIS(ois.ccy, ois.start, Tenor.SPOT)
+
+
+@instrument_to_spot.register
+def instrument_to_spot_irs(irs: IRS) -> IRS:
+    if irs.start is Tenor.SPOT:
+        return irs
+    return IRS(irs.ccy, irs.start, Tenor.SPOT, irs.idx)
+
+
+@instrument_to_spot.register
+def instrument_to_spot_swaption(swaption: Swaption) -> IRS:
+    return IRS(swaption.ccy, swaption.expiry, Tenor.SPOT)
+
+
+@instrument_to_spot.register
+def instrument_to_spot_xccy_basis(xccy: XccyBasis) -> XccyBasis:
+    if xccy.start is Tenor.SPOT:
+        return xccy
+    return XccyBasis(xccy.ccy, xccy.start, Tenor.SPOT)
+
+
+@instrument_to_spot.register
+def instrument_to_spot_ccs(ccs: CrossCurrencySwap) -> CrossCurrencySwap:
+    if ccs.start is Tenor.SPOT:
+        return ccs
+    return CrossCurrencySwap(ccs.ccy, ccs.start, Tenor.SPOT)
+
+
+@instrument_to_spot.register
+def instrument_to_spot_tenor_basis(tb: TenorBasis) -> TenorBasis:
+    if tb.start is Tenor.SPOT:
+        return tb
+    return TenorBasis(tb.ccy, tb.start, tb.idx_1, tb.idx_2, Tenor.SPOT)
+
+
+@instrument_to_spot.register
+def instrument_to_spot_inflation(inf_swap: InflationSwap) -> InflationSwap:
+    if inf_swap.start is Tenor.SPOT:
+        return inf_swap
+    return InflationSwap(inf_swap.index, inf_swap.start, Tenor.SPOT)
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\instrument_type.py
+----------------------------------------
+from functools import singledispatch
+from typing import Callable, Union, List
+from .instrument import Ccy, Tenor, Instrument, IRS, FRA, OIS, TenorBasis, XccyBasis, CrossCurrencySwap, FXForward
+
+FACTORY_TYPE = Callable[[Tenor], Instrument]
+
+
+def instrument_factory(inst: Instrument, *instruments) -> Union[FACTORY_TYPE, List[FACTORY_TYPE]]:
+    if instruments:
+        return instrument_factory_many([inst, *instruments])
+    return instrument_factory_single(inst)
+
+
+def instrument_factory_many(instruments: List[Instrument]) -> List[FACTORY_TYPE]:
+    return list(map(instrument_factory_single, instruments))
+
+
+@singledispatch
+def instrument_factory_single(inst: Instrument) -> FACTORY_TYPE:
+    raise TypeError(f'expect Instrument, got type {type(inst)} instead')
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_irs(inst: IRS) -> Callable[[Tenor], IRS]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'tenor'}
+    idx = inst.idx
+
+    def irs_factory(tenor: Tenor) -> IRS:
+        if tenor < idx:
+            raise ValueError(f'tenor {tenor} < index of IRS {kwd}')
+        return type(inst)(tenor=tenor, **kwd)
+
+    return irs_factory
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_fra(inst: FRA) -> Callable[[Tenor], FRA]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'start'}
+
+    def fra_factory(tenor: Tenor) -> FRA:
+        return type(inst)(start=tenor, **kwd)
+
+    return fra_factory
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_ois(inst: OIS) -> Callable[[Tenor], OIS]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'tenor'}
+    ccy = inst.ccy
+
+    def ois_factory(tenor: Tenor) -> OIS:
+        if ccy in (Ccy.INR, Ccy.INO) and tenor < Tenor.T_6M:
+            raise ValueError(f'tenor {tenor} < minimum payment period of OIS {kwd}')
+        return type(inst)(tenor=tenor, **kwd)
+
+    return ois_factory
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_tenor_basis(inst: TenorBasis) -> Callable[[Tenor], TenorBasis]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'tenor'}
+    idx = max(inst.idx_1, inst.idx_2)
+
+    def tenor_basis_factory(tenor: Tenor) -> TenorBasis:
+        if tenor < idx:
+            raise ValueError(f'tenor {tenor} < index of TenorBasis {kwd}')
+        return type(inst)(tenor=tenor, **kwd)
+
+    return tenor_basis_factory
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_xccy(inst: XccyBasis) -> Callable[[Tenor], XccyBasis]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'tenor'}
+    idx = Tenor.T_6M if inst.ccy in (Ccy.KRW, Ccy.SGD) else Tenor.T_3M
+
+    def xccy_factory(tenor: Tenor) -> XccyBasis:
+        if tenor < idx:
+            raise ValueError(f'tenor {tenor} < index of XccyBasis {kwd}')
+        return type(inst)(tenor=tenor, **kwd)
+
+    return xccy_factory
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_ccs(inst: CrossCurrencySwap) -> Callable[[Tenor], CrossCurrencySwap]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'tenor'}
+    idx = Tenor.T_6M if inst.ccy in (Ccy.INR, Ccy.INO) else Tenor.T_3M
+
+    def ccs_factory(tenor: Tenor) -> CrossCurrencySwap:
+        if tenor < idx:
+            raise ValueError(f'tenor {tenor} < index of CrossCurrencySwap {kwd}')
+        return type(inst)(tenor=tenor, **kwd)
+
+    return ccs_factory
+
+
+@instrument_factory_single.register
+def instrument_factory_single_by_fx_fwd(inst: FXForward) -> Callable[[Tenor], FXForward]:
+    kwd = {k: v for k, v in vars(inst).items() if k != 'tenor'}
+
+    def fx_fwd_factory(tenor: Tenor) -> FXForward:
+        return type(inst)(tenor=tenor, **kwd)
+
+    return fx_fwd_factory
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\market_data.py
+----------------------------------------
+from __future__ import annotations
+from dataclasses import dataclass, field
+from collections import Counter, defaultdict
+from datetime import datetime
+from typing import Union, Tuple, Any, List, Dict
+
+import pandas
+import dateutil.parser
+from .core import Tenor
+
+
+@dataclass(frozen=True)
+class MarketData:
+    name: Union[str, Tuple]
+    raw: Counter = field(default_factory=Counter, repr=False)
+
+    def __len__(self) -> int:
+        return len(self.raw)
+
+    def __gt__(self, other):
+        assert isinstance(other, MarketData)
+        return (type(self).__name__, self.name) > (type(other).__name__, other.name)
+
+    def add_market_data(self, key: Any, value: float) -> None:
+        self.raw[key] = value
+
+    @property
+    def index(self) -> List[str]:
+        return list(self.raw.keys())
+
+    @property
+    def values(self) -> List[float]:
+        return list(self.raw.values())
+
+    def to_dict(self) -> Dict[str, float]:
+        return dict(self.raw)
+
+    def to_series(self) -> pandas.Series:
+        return pandas.Series(self.raw, name=self.name).sort_index()
+
+    def to_frame(self) -> pandas.DataFrame:
+        return self.to_series().to_frame()
+
+    to_pandas = to_series
+
+    def assert_same_market_data_type(self, other) -> None:
+        assert isinstance(other, type(self))
+        assert other.name == self.name
+        assert other.index == self.index
+
+    def __iadd__(self, other) -> None:
+        self.assert_same_market_data_type(other)
+        self.raw.update(other.raw)
+
+    def __isub__(self, other) -> None:
+        self.assert_same_market_data_type(other)
+        self.raw.subtract(other.raw)
+
+    def __add__(self, other) -> MarketData:
+        self.assert_same_market_data_type(other)
+        return type(self)(name=self.name, raw=self.raw + other.raw)
+
+    def __sub__(self, other) -> MarketData:
+        self.assert_same_market_data_type(other)
+        return type(self)(name=self.name, raw=self.raw - other.raw)
+
+
+class MarketDataCollection(list):
+    def get_fixing_data(self) -> List[IndexMarketData]:
+        return type(self)(filter(lambda x: isinstance(x, IndexMarketData), self))
+
+    def get_curve_data(self) -> List[CurveMarketData]:
+        return type(self)(filter(lambda x: isinstance(x, CurveMarketData), self))
+
+
+class TwoDimensionalMarketData(MarketData):
+    def to_frame(self) -> pandas.DataFrame:
+        rv = defaultdict(dict)
+        for (idx, col), val in self.raw.items():
+            rv[col][idx] = val
+
+        return pandas.DataFrame(rv).sort_index().T.sort_index().T
+
+    to_pandas = to_frame
+
+
+class IndexMarketData(MarketData):
+    def add_market_data(self, timestamp: datetime, quote: float) -> None:
+        if isinstance(timestamp, str):
+            timestamp = dateutil.parser.parse(timestamp)
+        assert isinstance(timestamp, datetime)
+        assert isinstance(quote, float)
+        super().add_market_data(timestamp, quote)
+
+
+class CurveMarketData(MarketData):
+    def add_market_data(self, tenor: Tenor, quote: float) -> None:
+        if isinstance(tenor, str):
+            tenor = Tenor[f'T_{tenor.upper()}']
+        assert isinstance(tenor, Tenor)
+        assert isinstance(quote, float)
+        super().add_market_data(tenor, quote)
+
+
+class FxSpotMarketData(MarketData):
+    pass
+
+
+class FxStraddleMarketData(MarketData):
+    def add_market_data(self, tenor: Tenor, quote: float) -> None:
+        if isinstance(tenor, str):
+            tenor, _, _ = tenor.partition(':')
+            tenor = Tenor[f'T_{tenor.upper()}']
+        assert isinstance(tenor, Tenor)
+        assert isinstance(quote, float)
+        super().add_market_data(tenor, quote)
+
+
+class FxButterflyMarketData(TwoDimensionalMarketData):
+    def add_market_data(self, quote_spec: Tuple[Tenor, float], quote: float) -> None:
+        assert isinstance(quote_spec, str)
+        tenor, *_, strike = quote_spec.split(':')
+        strike = float(strike)
+        tenor = Tenor[f'T_{tenor.upper()}']
+        assert isinstance(tenor, Tenor)
+        assert isinstance(strike, float)
+        assert isinstance(quote, float)
+        super().add_market_data((tenor, strike), quote)
+
+
+class SwaptionMarketData(TwoDimensionalMarketData):
+    def add_market_data(self, quote_spec: Tuple[Tenor, Tenor], quote: float) -> None:
+        assert isinstance(quote_spec, str)
+        expiry, tenor, *_ = quote_spec.split(':')
+        expiry = Tenor[f'T_{expiry.upper()}']
+        tenor = Tenor[f'T_{tenor.upper()}']
+        assert isinstance(expiry, Tenor)
+        assert isinstance(tenor, Tenor)
+        assert isinstance(quote, float)
+        super().add_market_data((expiry, tenor), quote)
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\market_date.py
+----------------------------------------
+from datetime import datetime
+from typing import Optional, Callable
+
+import pytz
+from firm_domain import JsonSerialiserBase
+
+
+class MarketDate:
+    token_timestamp = 'timestamp'
+    token_is_latest_intraday = 'is_latest_intraday'
+
+    """
+    when is_latest_intraday == True, the live price is retrieved from BPIPE and assigned timestamp 'timestamp'
+    """
+    timestamp: datetime
+    is_latest_intraday: bool
+
+    def as_json_object(self, serialiser: JsonSerialiserBase):
+        return {
+            MarketDate.token_timestamp: serialiser.serialise(self.timestamp),
+            MarketDate.token_is_latest_intraday: self.is_latest_intraday,
+        }
+
+    def __init__(self, timestamp: Optional[datetime] = None):
+        if timestamp is not None:
+            assert isinstance(timestamp, datetime)
+            if timestamp.tzinfo is None:
+                raise Exception(f"timestamp {timestamp} does not have zone info")
+            self.timestamp = timestamp
+            self.is_latest_intraday = False
+        else:
+            x = datetime.utcnow()
+            micro = x.microsecond  # round to the nearest millisecond, because of F3 representation restriction
+            micro = micro - (micro % 1000)
+            self.timestamp = datetime(year=x.year, month=x.month, day=x.day, hour=x.hour, minute=x.minute,
+                                      second=x.second, microsecond=micro, tzinfo=x.tzinfo)
+            self.timestamp = pytz.utc.localize(self.timestamp)
+            self.is_latest_intraday = True
+
+    @staticmethod
+    def CreateIntraday():
+        return MarketDate()
+
+    def __str__(self):
+        if self.is_latest_intraday:
+            return f"Latest ({self.timestamp})"
+        else:
+            return f"{self.timestamp}"
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\position.py
+----------------------------------------
+import datetime
+from abc import ABCMeta
+from enum import Enum
+from dataclasses import dataclass
+from functools import singledispatch
+from typing import Tuple
+
+from .core import Ccy, Tenor, InflationIndex, SwaptionType, OptionType, CapFloorType
+from .trade import Trade, OISTrade, IRSTrade, InflationSwapTrade, TenorBasisTrade, CrossCurrencySwapTrade, \
+    XccyBasisTrade, SwaptionTrade, CashFlow, FXForwardTrade, FXOptionTrade, BondFutureTrade, \
+    CrossCurrencySwaptionTrade, RatesFutureTrade, RatesFutureOptionTrade, CapFloorTrade, StockTrade, StockFutureTrade
+
+
+@dataclass
+class Position(metaclass=ABCMeta):
+    pid: int  # portfolio ID
+    iid: int  # instrument ID
+    cp_name: str  # counter-party name
+    ccy: Ccy
+    notional: float
+    _excluded_fields = ('pid', 'cp_name', 'notional')
+
+    def same_underlying(self, other):
+        def unpack():
+            yield isinstance(other, type(self))
+            for k in other.__dataclass_fields__:
+                if k not in self._excluded_fields:
+                    yield getattr(other, k) == getattr(self, k)
+
+        return all(unpack())
+
+    def __iadd__(self, other):
+        assert self.same_underlying(other)
+        self.notional += other.notional
+        if self.cp_name != other.cp_name:
+            self.cp_name = 'Mix'
+        return self
+
+    def __isub__(self, other):
+        assert self.same_underlying(other)
+        self.notional -= other.notional
+        if self.cp_name != other.cp_name:
+            self.cp_name = 'Mix'
+        return self
+
+    def __add__(self, other):
+        assert self.same_underlying(other)
+        new = type(self)(**self.__dict__)
+        new += other
+        return new
+
+    def __sub__(self, other):
+        assert self.same_underlying(other)
+        new = type(self)(**self.__dict__)
+        new -= other
+        return new
+
+    def to_dict(self):
+        def unpack():
+            yield 'trade_type', type(self).__name__
+            for k, v in vars(self).items():
+                if v is None:
+                    continue
+                elif isinstance(v, Enum):
+                    # convert to string so that output shows up properly in Excel
+                    v = v.name
+                yield k, v
+
+        return dict(unpack())
+
+    @classmethod
+    def from_trade(cls, trade: Trade):
+        return cls(**{i: getattr(trade, i) for i in cls.__dataclass_fields__})
+
+
+@dataclass
+class OisPosition(Position):
+    start: datetime.datetime
+    maturity: datetime.datetime
+    rate: float
+
+
+@dataclass
+class IrsPosition(OisPosition):
+    idx: Tenor
+
+
+@dataclass
+class CapFloorPosition(Position):
+    start: datetime.datetime
+    maturity: datetime.datetime
+    idx: Tenor
+    strike: float
+    option_type: CapFloorType
+
+
+@dataclass
+class InflationSwapPosition(OisPosition):
+    index: InflationIndex
+
+
+@dataclass
+class TenorBasisPosition(OisPosition):
+    idx_1: Tenor
+    idx_2: Tenor
+    spread_tenor: Tenor
+
+
+@dataclass
+class CrossCurrencySwapPosition(OisPosition):
+    fx_rate: float
+    idx: Tenor
+    ccy_base: Ccy
+
+
+@dataclass
+class XccyBasisPosition(OisPosition):
+    fx_rate: float
+    is_mtm: bool
+    ccy_base: Ccy
+
+
+@dataclass
+class SwaptionPosition(Position):
+    expiry: datetime.datetime
+    start: datetime.datetime
+    maturity: datetime.datetime
+    strike: float
+    swaption_type: SwaptionType
+    idx: Tenor
+
+
+@dataclass
+class CrossCurrencySwaptionPosition(SwaptionPosition):
+    ccy_base: Ccy
+
+
+@dataclass
+class CashPosition(Position):
+    maturity: datetime.datetime
+
+
+def vwap(price_size1: Tuple[float, float], price_size2: Tuple[float, float]) -> Tuple[float, float]:
+    price1, size1 = price_size1
+    price2, size2 = price_size2
+    assert size1 * size2 >= 0, 'two trades are in different directions'
+    size = size1 + size2
+    price = (price1 * size1 + price2 * size2) / size
+    return price, size
+
+
+@dataclass
+class FxForwardPosition(Position):
+    value_date: datetime.datetime
+    rate: float
+    ccy_base: Ccy
+    fixing_date: datetime.datetime
+    _excluded_fields = ('pid', 'notional', 'rate')
+
+    def __iadd__(self, other):
+        assert self.same_underlying(other)
+        self.rate, self.notional = vwap((self.rate, self.notional), (other.rate, other.notional))
+        return self
+
+    def __isub__(self, other):
+        assert self.same_underlying(other)
+        self.rate, self.notional = vwap((self.rate, self.notional), (other.rate, -other.notional))
+        return self
+
+
+@dataclass
+class FxOptionPosition(Position):
+    expiry: datetime.datetime
+    strike: float
+    option_type: OptionType
+    ccy_base: Ccy
+
+
+@dataclass
+class StockPosition(Position):
+    ticker: str
+    price: float
+    quantity: float
+    _excluded_fields = ('pid', 'notional', 'price', 'quantity')
+
+    def __iadd__(self, other):
+        assert self.same_underlying(other)
+        self.price, self.quantity = vwap((self.price, self.quantity), (other.price, other.quantity))
+        self.notional += other.notional
+        return self
+
+    def __isub__(self, other):
+        assert self.same_underlying(other)
+        self.price, self.quantity = vwap((self.price, self.quantity), (other.price, -other.quantity))
+        self.notional -= other.notional
+        return self
+
+
+@dataclass
+class FuturePosition(Position):
+    expiry: datetime.datetime
+    ticker: str
+    price: float
+    _excluded_fields = ('pid', 'notional', 'price')
+
+    def __iadd__(self, other):
+        assert self.same_underlying(other)
+        self.price, self.notional = vwap((self.price, self.notional), (other.price, other.notional))
+        return self
+
+    def __isub__(self, other):
+        assert self.same_underlying(other)
+        self.price, self.notional = vwap((self.price, self.notional), (other.price, -other.notional))
+        return self
+
+
+@dataclass
+class StockFuturePosition(FuturePosition):
+    pass
+
+
+@dataclass
+class BondFuturePosition(FuturePosition):
+    pass
+
+
+@dataclass
+class RatesFuturePosition(FuturePosition):
+    pass
+
+
+@dataclass
+class RatesFutureOptionPosition(FuturePosition):
+    strike: float
+    option_type: OptionType
+
+
+@singledispatch
+def trade2position(trade: Trade) -> Position:
+    raise TypeError(f'unsupported type {type(trade)}')
+
+
+@trade2position.register
+def trade2position_ois(trade: OISTrade) -> OisPosition:
+    return OisPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_irs(trade: IRSTrade) -> IrsPosition:
+    return IrsPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_cap_floor(trade: CapFloorTrade) -> CapFloorPosition:
+    return CapFloorPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_inflation(trade: InflationSwapTrade) -> InflationSwapPosition:
+    return InflationSwapPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_tenor_basis(trade: TenorBasisTrade) -> TenorBasisPosition:
+    return TenorBasisPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_ccs(trade: CrossCurrencySwapTrade) -> CrossCurrencySwapPosition:
+    return CrossCurrencySwapPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_xccy(trade: XccyBasisTrade) -> XccyBasisPosition:
+    return XccyBasisPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_swaption(trade: SwaptionTrade) -> SwaptionPosition:
+    return SwaptionPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_ccs_swaption(trade: CrossCurrencySwaptionTrade) -> CrossCurrencySwaptionPosition:
+    return CrossCurrencySwaptionPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_cash(trade: CashFlow) -> CashPosition:
+    return CashPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_fx_fwd(trade: FXForwardTrade) -> FxForwardPosition:
+    return FxForwardPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_fx_option(trade: FXOptionTrade) -> FxOptionPosition:
+    return FxOptionPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_stock(trade: StockTrade) -> StockPosition:
+    return StockPosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_stock_future(trade: StockFutureTrade) -> StockFuturePosition:
+    return StockFuturePosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_bond_future(trade: BondFutureTrade) -> BondFuturePosition:
+    return BondFuturePosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_rates_future(trade: RatesFutureTrade) -> RatesFuturePosition:
+    return RatesFuturePosition.from_trade(trade)
+
+
+@trade2position.register
+def trade2position_rates_option(trade: RatesFutureOptionTrade) -> RatesFutureOptionPosition:
+    return RatesFutureOptionPosition.from_trade(trade)
+
+
+if __name__ == '__main__':
+    pass
+    pos = FxOptionPosition(1, 2, Ccy.EUR, 1000, datetime.datetime(2019, 12, 11), 1.2, OptionType.CALL, Ccy.USD)
+    pos1 = FxOptionPosition(1, 2, Ccy.EUR, 1000, datetime.datetime(2019, 12, 10), 1.2, OptionType.CALL, Ccy.USD)
+    pos2 = FxOptionPosition(1, 2, Ccy.EUR, 200, datetime.datetime(2019, 12, 10), 1.2, OptionType.CALL, Ccy.USD)
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\printable_enum.py
+----------------------------------------
+from enum import Enum
+
+
+class PrintableEnum(Enum):
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __lt__(self, other):
+        if isinstance(other, type(self)):
+            return self.value < other.value
+        return other > self
+
+    def __le__(self, other):
+        if isinstance(other, type(self)):
+            return self.value <= other.value
+        return other >= self
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\security.py
+----------------------------------------
+from datetime import date
+from dataclasses import dataclass
+from typing import Union
+from enum import Enum
+
+from .core import Ccy, Tenor
+from .instrument import Instrument
+
+
+@dataclass(frozen=True)
+class SecuritySingle(Instrument):
+    ccy: Ccy
+    settlement: Union[date, Tenor]
+    contract_mult: float
+
+class Security(SecuritySingle, Enum):
+    KR310101G982 = (Ccy.KRW, Tenor.T_1D, 0.01)
+
+    def __str__(self):
+        return self.name
+    def __repr__(self):
+        return str(self)
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\trade.py
+----------------------------------------
+from datetime import datetime, date
+from abc import ABCMeta
+from dataclasses import dataclass, field
+from typing import Optional
+from enum import Enum
+
+from .core import Ccy, Tenor, InflationIndex, SwaptionType, OptionType, Country, CapFloorType
+from .convention import Conventions
+from .instrument import FXForward, IRS, OIS, TenorBasis, InflationSwap, Swaption, XccyBasis, FXOption
+from .security import Security
+
+DFORM = '%Y%m%d'
+
+
+class Trade(metaclass=ABCMeta):
+    trade_date: datetime
+    ccy: Ccy
+    notional: float
+    pid = iid = tid = cp_id = cp_name = cp_ref = broker_ref = None
+
+    def to_dict(self):
+        def unpack():
+            yield 'trade_type', type(self).__name__
+            for k, v in vars(self).items():
+                if v is None:
+                    continue
+                elif isinstance(v, Enum):
+                    # convert to string so that output shows up properly in Excel
+                    v = v.name
+                yield k, v
+
+        return dict(unpack())
+
+    def is_live(self, as_of: date = None):
+        if as_of is None:
+            as_of = datetime.now().date()
+
+        for k in ('expiry', 'maturity', 'value_date'):
+            try:
+                expiry = getattr(self, k)
+                break
+            except AttributeError:
+                pass
+        else:
+            return True
+        return expiry >= as_of
+
+    def get_rate(self) -> float:
+        return 0
+
+
+@dataclass
+class StockTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    price: float
+    quantity: float
+    ticker: str
+    notional: float = None
+    isin: str = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if self.notional is None:
+            self.notional = self.price * self.quantity
+
+
+@dataclass
+class BondTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    maturity: date
+    notional: float
+    price: float
+    coupon: float
+    country: Country = None
+    issue_date: date = field(default=None, repr=False)
+    isin: str = field(default=None, repr=False)
+
+    @staticmethod
+    def country_from_isin(isin: str) -> Country:
+        country_str = isin[:2]
+        if country_str == 'EU':
+            country_str = 'LU'
+        return Country[country_str]
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.country, str):
+            self.country = Country[self.country]
+        elif self.country is None and isinstance(self.isin, str) and len(self.isin) >= 2:
+            self.country = self.country_from_isin(self.isin)
+
+
+@dataclass
+class FutureTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    ticker: str
+    expiry: date = field(repr=False)
+    quantity: float = field(repr=False)
+    price: float
+    contract_size: float = field(default=1, repr=False)
+    notional: float = field(init=False)
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        self.notional = self.contract_size * self.quantity
+
+
+@dataclass
+class StockFutureTrade(FutureTrade):
+    underlyer: str = field(default=None, repr=False)
+
+
+@dataclass
+class BondFutureTrade(FutureTrade):
+    pass
+
+
+@dataclass
+class RatesFutureTrade(FutureTrade):
+    pass
+
+
+@dataclass
+class RatesFutureOptionTrade(FutureTrade):
+    strike: float = None
+    option_type: OptionType = None
+
+    def __post_init__(self):
+        assert self.strike is not None, 'missing keyword argument "strike"'
+        assert self.option_type is not None, 'missing keyword argument "option_type"'
+        if isinstance(self.option_type, str):
+            self.option_type = OptionType[self.option_type]
+        super().__post_init__()
+
+
+@dataclass
+class TRSTrade(Trade):
+    trade_date: datetime
+    underlying: Security
+    ccy: Ccy
+    start: date
+    maturity: date
+    margin: float
+    notional: float
+    price: float
+    ccy_funding: Ccy = Ccy.USD
+    idx: Optional[Tenor] = None
+    fx_rate: float = 1
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.underlying, str):
+            self.underlying = Security[self.underlying]
+        if self.idx is None:
+            conv = Conventions()
+            idx = conv.ref_rate(self.ccy, tenor=conv.dates_to_tenor(self.start, self.maturity))
+            object.__setattr__(self, 'idx', idx)
+        elif isinstance(self.idx, str):
+            self.idx = Tenor[self.idx]
+
+    def __repr__(self) -> str:
+        return f'TRSTrade_{self.trade_date.strftime(DFORM)}_{self.underlying}_{self.start.strftime(DFORM)}_{self.maturity.strftime(DFORM)}_{self.margin}_{self.notional}'
+
+
+@dataclass
+class FXForwardTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    value_date: date
+    rate: float
+    notional: float
+    ccy_base: Optional[Ccy] = None
+    fixing_date: Optional[date] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.ccy_base, str):
+            self.ccy_base = Ccy[self.ccy_base]
+        if self.ndf != Conventions.trades_as_ndf(self.ccy):
+            # jchi@201906 temporary warning message, eventually should go away
+            print(f'WARNING trade {self.ccy_base}{self.ccy} as NOT an NDF, inconsistent with Domain.domain.Conventions')
+
+        if self.ccy_base is None:
+            other = Conventions.get_base_ccy(self.ccy)
+            if self.ccy < other:
+                object.__setattr__(self, 'ccy_base', self.ccy)
+                object.__setattr__(self, 'ccy', other)
+
+            else:
+                object.__setattr__(self, 'ccy_base', other)
+
+    @classmethod
+    def from_fxforward(cls, fwd: FXForward, trade_date: datetime, rate: float, notional: float,
+                       fixing_date: date = None, conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = fwd.ccy
+        value_date = conv.date_from_tenor(trade_date, fwd.tenor, holiday_calendar=ccy)
+        return cls(trade_date=trade_date, ccy=ccy, value_date=value_date, rate=rate, notional=notional,
+                   ccy_base=fwd.ccy_base, fixing_date=fixing_date)
+
+    def __repr__(self) -> str:
+        return 'FXForwardTrade_{d}_{c}{c2}_{m}_{r}_{s}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy_base,
+                                                               c2=self.ccy, m=self.value_date.strftime(DFORM),
+                                                               r=self.rate, s=self.notional)
+
+    @property
+    def ndf(self):
+        return self.fixing_date is not None
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class IRSTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    start: date
+    maturity: date
+    rate: float
+    notional: float
+    idx: Optional[Tenor] = None
+    spread: float = 0
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if self.idx is None:
+            conv = Conventions()
+            idx = conv.ref_rate(self.ccy, tenor=conv.dates_to_tenor(self.start, self.maturity))
+            object.__setattr__(self, 'idx', idx)
+        elif isinstance(self.idx, str):
+            self.idx = Tenor[self.idx]
+
+    @classmethod
+    def from_swap(cls, swap: IRS, trade_date: datetime, rate: float, notional: float, conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = swap.ccy
+        start = conv.date_from_tenor(trade_date, swap.start, swap.ccy)
+        maturity = conv.date_from_tenor(trade_date, swap.tenor, swap.ccy)
+        return cls(trade_date, ccy, start, maturity, rate, notional, swap.idx)
+
+    def __repr__(self) -> str:
+        return 'IRSTrade_{d}_{c}_{s}_{m}_{r}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                         s=self.start.strftime(DFORM), m=self.maturity.strftime(DFORM),
+                                                         r=self.rate, n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class CapFloorTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    start: date
+    maturity: date
+    strike: float
+    option_type: CapFloorType
+    notional: float
+    idx: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if self.idx is None:
+            conv = Conventions()
+            idx = conv.ref_rate(self.ccy, tenor=conv.dates_to_tenor(self.start, self.maturity))
+            object.__setattr__(self, 'idx', idx)
+        elif isinstance(self.idx, str):
+            self.idx = Tenor[self.idx]
+        if isinstance(self.option_type, str):
+            self.option_type = CapFloorType[self.option_type]
+
+    def __repr__(self) -> str:
+        typ = 'Cap' if self.option_type is CapFloorType.CAP else 'Floor'
+        td = self.trade_date.strftime(DFORM)
+        sd = self.start.strftime(DFORM)
+        md = self.maturity.strftime(DFORM)
+        return f'{typ}Trade_{td}_{self.ccy}_{sd}_{md}_{self.strike}_{self.notional}'
+
+
+@dataclass
+class OISTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    start: date
+    maturity: date
+    rate: float
+    notional: float
+    fixed_freq: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if self.fixed_freq is None:
+            conv = Conventions()
+            fixed_freq = conv.fixed_coup_freq(self.ccy)
+            object.__setattr__(self, 'fixed_freq', fixed_freq)
+        elif isinstance(self.fixed_freq, str):
+            self.fixed_freq = Tenor[self.fixed_freq]
+
+    @classmethod
+    def from_ois(cls, swap: OIS, trade_date: datetime, rate: float, notional: float, conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = swap.ccy
+        start = conv.date_from_tenor(trade_date, swap.start, swap.ccy)
+        maturity = conv.date_from_tenor(trade_date, swap.tenor, swap.ccy)
+        return cls(trade_date, ccy, start, maturity, rate, notional, swap.fixed_freq)
+
+    def __repr__(self) -> str:
+        return 'OISTrade_{d}_{c}_{s}_{m}_{f}_{r}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                             s=self.start.strftime(DFORM),
+                                                             m=self.maturity.strftime(DFORM),
+                                                             f=self.fixed_freq, r=self.rate, n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class TenorBasisTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    start: date
+    maturity: date
+    notional: float
+    rate: float
+    idx_1: Tenor
+    idx_2: Optional[Tenor] = None
+    spread_tenor: Optional[Tenor] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.idx_1, str):
+            self.idx_1 = Tenor[self.idx_1]
+        if isinstance(self.idx_2, str):
+            self.idx_2 = Tenor[self.idx_2]
+        if isinstance(self.spread_tenor, str):
+            self.spread_tenor = Tenor[self.spread_tenor]
+
+        default_tenor = Conventions.ref_rate(self.ccy)
+        idx_1, idx_2 = self.idx_1, self.idx_2
+        if idx_2 is None:
+            idx_2 = default_tenor
+
+        if idx_1 == idx_2:
+            raise ValueError("Can't create a TenorBasis Swap with identical floating index")
+
+        idx_1, idx_2 = min(idx_1, idx_2), max(idx_1, idx_2)
+        object.__setattr__(self, 'idx_1', idx_1)
+        object.__setattr__(self, 'idx_2', idx_2)
+
+        if self.spread_tenor is None:
+            object.__setattr__(self, 'spread_tenor', idx_1)
+
+    @classmethod
+    def from_tenorbasis(cls, swap: TenorBasis, trade_date: datetime, rate: float, notional: float,
+                        conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        start = conv.date_from_tenor(trade_date, swap.start, swap.ccy)
+        maturity = conv.date_from_tenor(start, swap.tenor, swap.ccy)
+        return cls(trade_date, swap.ccy, start, maturity, notional, rate, swap.idx_1, swap.idx_2)
+
+    def __repr__(self) -> str:
+        return 'TenorBasis_{d}_{c}_{s}_{m}_{t}_{r}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                               s=self.start.strftime(DFORM), r=self.rate,
+                                                               m=self.maturity.strftime(DFORM),
+                                                               t=f'{self.idx_1}{self.idx_2}', n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class InflationSwapTrade(Trade):
+    trade_date: datetime
+    index: InflationIndex
+    start: date
+    maturity: date
+    rate: float
+    notional: float
+    ccy: Ccy = field(init=False)
+
+    def __post_init__(self):
+        if isinstance(self.index, str):
+            self.index = InflationIndex[self.index]
+        object.__setattr__(self, 'ccy', Conventions.inf_index_to_ccy(self.index))
+
+    @classmethod
+    def from_inflationswap(cls, swap: InflationSwap, trade_date: datetime, rate: float,
+                           notional: float, conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        start = conv.date_from_tenor(trade_date, swap.start, swap.ccy)
+        maturity = conv.date_from_tenor(start, swap.tenor, swap.ccy)
+        return cls(trade_date, swap.index, start, maturity, rate, notional)
+
+    def __repr__(self) -> str:
+        return 'InfSwapTrade_{d}_{c}_{i}_{n}_{s}_{m}_{r}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                                 i=self.index, n=self.notional,
+                                                                 s=self.start.strftime(DFORM),
+                                                                 m=self.maturity.strftime(DFORM), r=self.rate)
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class CrossCurrencySwapTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    start: date
+    maturity: date
+    rate: float
+    notional: float
+    fx_rate: float
+    idx: Optional[Tenor] = None
+    ccy_base: Ccy = Ccy.USD
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.ccy_base, str):
+            self.ccy_base = Ccy[self.ccy_base]
+        if isinstance(self.idx, str):
+            self.idx = Tenor[self.idx]
+        if self.idx is None:
+            conv = Conventions()
+            idx = conv.ccs_ref_rate(self.ccy)
+            object.__setattr__(self, 'idx', idx)
+        if self.ccy_base is None:
+            object.__setattr__(self, 'ccy_base', Ccy.USD)
+
+    @classmethod
+    def from_swap(cls, swap: IRS, trade_date: datetime, rate: float, notional: float, fx_rate: float,
+                  conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = swap.ccy
+        start = conv.date_from_tenor(trade_date, swap.start, swap.ccy)
+        maturity = conv.date_from_tenor(trade_date, swap.tenor, swap.ccy)
+        return cls(trade_date, ccy, start, maturity, rate, notional, fx_rate)
+
+    def __repr__(self) -> str:
+        return 'CCSTrade_{d}_{c}_{s}_{m}_{r}_{fx}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                              s=self.start.strftime(DFORM),
+                                                              m=self.maturity.strftime(DFORM),
+                                                              r=self.rate, fx=self.fx_rate, n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class CrossCurrencySwaptionTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    expiry: date
+    start: date
+    maturity: date
+    strike: float
+    swaption_type: SwaptionType
+    notional: float
+    idx: Optional[Tenor] = None
+    ccy_base: Ccy = Ccy.USD
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.ccy_base, str):
+            self.ccy_base = Ccy[self.ccy_base]
+        if isinstance(self.swaption_type, str):
+            self.swaption_type = SwaptionType[self.swaption_type]
+        if self.idx is None:
+            conv = Conventions()
+            idx = conv.ccs_ref_rate(self.ccy)
+            object.__setattr__(self, 'idx', idx)
+        elif isinstance(self.idx, str):
+            self.idx = Tenor[self.idx]
+        if self.ccy_base is None:
+            object.__setattr__(self, 'ccy_base', Ccy.USD)
+
+    def get_swap(self, fx_rate: float = 1) -> CrossCurrencySwapTrade:
+        type_mult = 1 if self.swaption_type == SwaptionType.RECEIVER else -1
+        return CrossCurrencySwapTrade(self.expiry, self.ccy, self.start, self.maturity, self.strike,
+                                      self.notional * type_mult, fx_rate,
+                                      self.idx)
+
+    def __repr__(self) -> str:
+        return 'CCSSwaptionTrade_{d}_{c}_{s}_{m}_{r}_{t}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                                     s=self.start.strftime(DFORM),
+                                                                     m=self.maturity.strftime(DFORM),
+                                                                     r=self.strike, t=self.swaption_type.name,
+                                                                     n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.strike
+
+
+@dataclass
+class SwaptionTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    expiry: date
+    start: date
+    maturity: date
+    strike: float
+    swaption_type: SwaptionType
+    notional: float
+    idx: Optional[Tenor] = None
+    cash_settle: Optional[bool] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.swaption_type, str):
+            self.swaption_type = SwaptionType[self.swaption_type]
+        if self.idx is None:
+            conv = Conventions()
+            idx = conv.ref_rate(self.ccy, tenor=conv.dates_to_tenor(self.start, self.maturity))
+            object.__setattr__(self, 'idx', idx)
+        elif isinstance(self.idx, str):
+            self.idx = Tenor[self.idx]
+        if self.cash_settle is None:
+            self.cash_settle = Conventions().swaption_delivery_is_cash(self.ccy)
+
+    @classmethod
+    def from_swaption(cls, swaption: Swaption, trade_date: datetime, notional: float, strike: float,
+                      swaption_type: SwaptionType, conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = swaption.ccy
+        expiry = conv.date_from_tenor(trade_date, swaption.expiry, swaption.ccy)
+        start = conv.date_from_tenor(expiry, Tenor.T_2D, swaption.ccy)
+        maturity = conv.date_from_tenor(start, swaption.tenor, swaption.ccy)
+        return cls(trade_date, ccy, expiry, start, maturity, strike, swaption_type, notional)
+
+    def get_swap(self) -> IRSTrade:
+        type_mult = 1 if self.swaption_type == SwaptionType.RECEIVER else -1
+        return IRSTrade(self.expiry, self.ccy, self.start, self.maturity, self.strike, self.notional * type_mult,
+                        self.idx)
+
+    def __repr__(self) -> str:
+        return 'SwaptionTrade_{d}_{c}_{s}_{m}_{r}_{t}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                                  s=self.start.strftime(DFORM),
+                                                                  m=self.maturity.strftime(DFORM),
+                                                                  r=self.strike, t=self.swaption_type.name,
+                                                                  n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.strike
+
+
+@dataclass
+class CashFlow(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    maturity: date
+    notional: float
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+
+    def __repr__(self) -> str:
+        return 'CashFlow_{d}_{c}_{m}_{s}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                 m=self.maturity.strftime(DFORM), s=self.notional)
+
+
+@dataclass
+class XccyBasisTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    start: date
+    maturity: date
+    rate: float
+    notional: float
+    fx_rate: float
+    is_mtm: Optional[bool] = None
+    ccy_base: Ccy = None
+
+    def __post_init__(self):
+        if self.ccy_base is None:
+            object.__setattr__(self, 'ccy_base', Conventions.get_base_ccy(self.ccy))
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.ccy_base, str):
+            self.ccy_base = Ccy[self.ccy_base]
+        if self.is_mtm is None:
+            object.__setattr__(self, 'is_mtm', Conventions.trades_as_mtm_xccy(self.ccy))
+
+    @classmethod
+    def from_xccy_basis(cls, xccy_basis: XccyBasis, trade_date: datetime, rate: float, notional: float, fx_rate: float,
+                        conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = xccy_basis.ccy
+        start = conv.date_from_tenor(trade_date, xccy_basis.start, xccy_basis.ccy)
+        maturity = conv.date_from_tenor(trade_date, xccy_basis.tenor, xccy_basis.ccy)
+        return cls(trade_date, ccy, start, maturity, rate, notional, fx_rate)
+
+    def __repr__(self) -> str:
+        return 'XccyBasisTrade_{d}_{c}_{s}_{m}_{r}_{fx}_{n}'.format(d=self.trade_date.strftime(DFORM), c=self.ccy,
+                                                                    s=self.start.strftime(DFORM),
+                                                                    m=self.maturity.strftime(DFORM),
+                                                                    r=self.rate, fx=self.fx_rate, n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.rate
+
+
+@dataclass
+class FXOptionTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    expiry: date
+    strike: float
+    option_type: OptionType
+    notional: float
+    value_date: date
+    ccy_base: Optional[Ccy] = None
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+        if isinstance(self.ccy_base, str):
+            self.ccy_base = Ccy[self.ccy_base]
+        if isinstance(self.option_type, str):
+            self.option_type = OptionType[self.option_type]
+
+        if self.ccy_base is None:
+            other = Conventions.get_base_ccy(self.ccy)
+            if self.ccy < other:
+                object.__setattr__(self, 'ccy_base', self.ccy)
+                object.__setattr__(self, 'ccy', other)
+
+            else:
+                object.__setattr__(self, 'ccy_base', other)
+
+    @classmethod
+    def from_fx_option(cls, fx_option: FXOption, trade_date: datetime, strike: float, notional: float,
+                       option_type: OptionType, conv: Conventions = None):
+        if not conv:
+            conv = Conventions()
+        ccy = fx_option.ccy
+        expiry = conv.date_from_tenor(trade_date, fx_option.expiry, ccy)
+        value_date = conv.date_from_tenor(expiry, Tenor.T_2D, ccy)
+        return cls(trade_date, ccy, expiry, strike, option_type, notional, value_date, fx_option.ccy_base)
+
+    def __repr__(self) -> str:
+        return '{t}_{d}_{b}{c}_{e}_{k}_{ot}_{n}'.format(t=type(self).__name__, d=self.trade_date.strftime(DFORM),
+                                                        c=self.ccy, b=self.ccy_base, e=self.expiry.strftime(DFORM),
+                                                        k=self.strike, ot=self.option_type, n=self.notional)
+
+    def get_rate(self) -> float:
+        return self.strike
+
+
+@dataclass
+class SpreadOptionTrade(Trade):
+    trade_date: datetime
+    ccy: Ccy
+    expiry: date
+    strike: float
+    idx_1: Tenor
+    idx_2: Tenor
+    notional: float
+
+    def __post_init__(self):
+        if isinstance(self.ccy, str):
+            self.ccy = Ccy[self.ccy]
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\trade_collapse.py
+----------------------------------------
+from datetime import date, datetime
+from collections import namedtuple
+from typing import Optional, List, Union, Dict, Tuple
+
+from .util.datehelper import date2datetime
+from .core import Ccy
+from .trade import (
+    Trade, FXOptionTrade, FXForwardTrade, CashFlow, SwaptionTrade, CrossCurrencySwaptionTrade, CrossCurrencySwapTrade,
+    IRSTrade, OISTrade, TenorBasisTrade, InflationSwapTrade, XccyBasisTrade, FutureTrade, BondTrade, RatesFutureTrade,
+    BondFutureTrade, StockFutureTrade
+)
+from .position import vwap
+
+POSITION_EPSILON = 1e-12
+
+
+def _standard_fx_trade(trade: FXForwardTrade) -> FXForwardTrade:
+    if trade.ccy_base < trade.ccy:
+        return trade
+    return FXForwardTrade(trade_date=trade.trade_date,
+                          ccy=trade.ccy_base,
+                          value_date=trade.value_date,
+                          rate=1 / trade.rate,
+                          notional=trade.notional * trade.rate * -1,
+                          ccy_base=trade.ccy,
+                          fixing_date=trade.fixing_date)
+
+
+def _fx_trade_helper(td: datetime, ccy: Ccy, ccy_base: Ccy, val_date: date, fix_date: Optional[date], notional: float,
+                     notional_num: float) -> Optional[Union[FXForwardTrade, CashFlow]]:
+    if abs(notional) < POSITION_EPSILON:
+        if abs(notional_num) < POSITION_EPSILON:
+            return None
+        return CashFlow(td, ccy, val_date, notional_num * -1)
+    if abs(notional_num) < POSITION_EPSILON:
+        return CashFlow(td, ccy_base, val_date, notional)
+    return FXForwardTrade(td, ccy, val_date, notional_num / notional, notional, ccy_base, fix_date)
+
+
+def collapse_fx_fwd(trades: List[FXForwardTrade], ref_date: date,
+                    standardize: bool = True) -> List[Union[FXForwardTrade, CashFlow]]:
+    live_trades = [_standard_fx_trade(t) if standardize else t for t in trades if t.is_live(ref_date)]
+    ccy_base_vd_fd = set((t.ccy, t.ccy_base, t.value_date, t.fixing_date) for t in live_trades)
+    td = date2datetime(ref_date)
+    trade_info = [[c, b, vd, fd] + list(map(sum, zip(*[(t.notional, t.rate * t.notional) for t in live_trades if
+                                                       t.ccy is c and t.ccy_base is b and t.value_date == vd and
+                                                       t.fixing_date == fd])))
+                  for c, b, vd, fd in ccy_base_vd_fd]
+    ret_trades = [_fx_trade_helper(td, *l) for l in trade_info]
+    return [t for t in ret_trades if t is not None]
+
+
+def collapse_cashflow(trades: List[CashFlow], ref_date: date) -> List[CashFlow]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_mat = set((t.ccy, t.maturity) for t in live_trades)
+    td = date2datetime(ref_date)
+    cfs = [CashFlow(td, c, m, sum(t.notional for t in live_trades if t.maturity == m and t.ccy is c)) for c, m in
+           ccy_mat]
+    return [t for t in cfs if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_irs(trades: List[IRSTrade], ref_date: date) -> List[IRSTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_start_mat_rate_idx = set((t.ccy, t.start, t.maturity, t.rate, t.idx) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [IRSTrade(td, c, s, m, r, sum(t.notional for t in live_trades if
+                                               t.maturity == m and t.ccy is c and t.start == s and
+                                               t.rate == r and t.idx == i),
+                           i) for c, s, m, r, i in ccy_start_mat_rate_idx]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_ois(trades: List[OISTrade], ref_date: date) -> List[OISTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_start_mat_rate = set((t.ccy, t.start, t.maturity, t.rate) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [OISTrade(td, c, s, m, r, sum(t.notional for t in live_trades if
+                                               t.maturity == m and t.ccy is c and t.start == s and t.rate == r)
+                           ) for c, s, m, r in ccy_start_mat_rate]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_tenor_basis(trades: List[TenorBasisTrade], ref_date: date) -> List[TenorBasisTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_start_mat_rate_idx1_idx2_st = set(
+        (t.ccy, t.start, t.maturity, t.rate, t.idx_1, t.idx_2, t.spread_tenor) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [TenorBasisTrade(td, c, s, m, sum(t.notional for t in live_trades if
+                                                   t.maturity == m and t.ccy is c and t.start == s and
+                                                   t.rate == r and t.idx_1 == i1 and t.idx_2 == i2 and
+                                                   t.spread_tenor == st),
+                                  r, i1, i2, st) for c, s, m, r, i1, i2, st in ccy_start_mat_rate_idx1_idx2_st]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_inflation_swap(trades: List[InflationSwapTrade], ref_date: date) -> List[InflationSwapTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    idx_start_mat_rate = set((t.index, t.start, t.maturity, t.rate) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [InflationSwapTrade(td, i, s, m, r, sum(t.notional for t in live_trades if t.index is i and
+                                                         t.maturity == m and t.start == s and
+                                                         t.rate == r),
+                                     ) for i, s, m, r in idx_start_mat_rate]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_ccs(trades: List[CrossCurrencySwapTrade], ref_date: date) -> List[CrossCurrencySwapTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_start_mat_rate_fx_idx_base = set(
+        (t.ccy, t.start, t.maturity, t.rate, t.fx_rate, t.idx, t.ccy_base) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [CrossCurrencySwapTrade(td, c, s, m, r, sum(t.notional for t in live_trades if
+                                                             t.maturity == m and t.ccy is c and t.start == s and
+                                                             t.rate == r and t.fx_rate == fx and t.idx == i and
+                                                             t.ccy_base is b),
+                                         fx, i, b) for c, s, m, r, fx, i, b in ccy_start_mat_rate_fx_idx_base]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_ccs_swaption(trades: List[CrossCurrencySwaptionTrade], ref_date: date) -> List[CrossCurrencySwaptionTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_exp_start_mat_stk_type_idx_base = set(
+        (t.ccy, t.expiry, t.start, t.maturity, t.strike, t.swaption_type, t.idx, t.ccy_base) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [CrossCurrencySwaptionTrade(td, c, e, s, m, stk, st, sum(t.notional for t in live_trades if
+                                                                          t.maturity == m and t.ccy is c and
+                                                                          t.expiry == e and t.start == s and
+                                                                          t.strike == stk and t.swaption_type is st and
+                                                                          t.idx == i and t.ccy_base is b),
+                                             i, b) for c, e, s, m, stk, st, i, b in ccy_exp_start_mat_stk_type_idx_base]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_swaption(trades: List[SwaptionTrade], ref_date: date) -> List[SwaptionTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_exp_start_mat_stk_type_idx = set(
+        (t.ccy, t.expiry, t.start, t.maturity, t.strike, t.swaption_type, t.idx) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [SwaptionTrade(td, c, e, s, m, stk, st, sum(t.notional for t in live_trades if t.maturity == m and
+                                                             t.ccy is c and t.expiry == e and t.start == s and
+                                                             t.strike == stk and t.swaption_type is st and t.idx == i),
+                                i) for c, e, s, m, stk, st, i in ccy_exp_start_mat_stk_type_idx]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_xccy_basis(trades: List[XccyBasisTrade], ref_date: date) -> List[XccyBasisTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_start_mat_rate_fx__mtm_base = set(
+        (t.ccy, t.start, t.maturity, t.rate, 0 if t.is_mtm else t.fx_rate, t.is_mtm, t.ccy_base) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [XccyBasisTrade(td, c, s, m, r, sum(t.notional for t in live_trades if
+                                                     t.maturity == m and t.ccy is c and t.start == s and
+                                                     t.rate == r and (t.fx_rate == fx if not t.is_mtm else True) and
+                                                     t.ccy_base is b),
+                                 fx, i, b) for c, s, m, r, fx, i, b in ccy_start_mat_rate_fx__mtm_base]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_fx_option(trades: List[FXOptionTrade], ref_date: date) -> List[FXOptionTrade]:
+    live_trades = [t for t in trades if t.is_live(ref_date)]
+    ccy_exp_stk_type_vd_b = set(
+        (t.ccy, t.expiry, t.strike, t.option_type, t.value_date, t.ccy_base) for t in live_trades)
+    td = date2datetime(ref_date)
+    ret_trades = [FXOptionTrade(td, c, e, stk, ty, sum(t.notional for t in live_trades if t.ccy is c and
+                                                       t.expiry == e and t.strike == stk and t.option_type is ty and
+                                                       t.value_date == vd and t.ccy_base is b),
+                                vd, b) for c, e, stk, ty, vd, b in ccy_exp_stk_type_vd_b]
+    return [t for t in ret_trades if abs(t.notional) > POSITION_EPSILON]
+
+
+def collapse_default(trades: List[Trade], ref_date: date) -> List[Trade]:
+    return trades
+
+
+FutureAttrs = namedtuple('FutureAttrs', ('cls', 'ccy', 'ticker', 'expiry', 'contract_size', 'underlyer', 'is_long'))
+
+
+def collapse_futures(trades: List[FutureTrade], ref_date: date) -> List[FutureTrade]:
+    price_quantity: Dict[FutureAttrs, Tuple[float, float]] = {}
+    for t in trades:
+        if isinstance(t, FutureTrade) and t.expiry > ref_date:
+            key = FutureAttrs(type(t), t.ccy, t.ticker, t.expiry, t.contract_size, getattr(t, 'underlyer', None),
+                              t.notional >= 0)
+            try:
+                price, quantity = price_quantity[key]
+            except KeyError:
+                price_quantity[key] = t.price, t.quantity
+            else:
+                price_quantity[key] = vwap((price, quantity), (t.price, t.quantity))
+
+    def unpack():
+        for attrs, (p, q) in price_quantity.items():
+            kwd = {
+                'trade_date': date2datetime(ref_date),
+                'ccy': attrs.ccy,
+                'ticker': attrs.ticker,
+                'expiry': attrs.expiry,
+                'quantity': q,
+                'price': p,
+                'contract_size': attrs.contract_size,
+            }
+            if attrs.underlyer:
+                kwd['underlyer'] = attrs.underlyer
+            yield attrs.cls(**kwd)
+
+    return list(unpack())
+
+
+BondAttrs = namedtuple('BondAttrs', ('cls', 'ccy', 'maturity', 'coupon', 'country', 'issue_date', 'isin', 'is_long'))
+
+
+def collapse_bonds(trades: List[BondTrade], ref_date: date) -> List[BondTrade]:
+    price_notional: Dict[BondAttrs, Tuple[float, float]] = {}
+    for t in trades:
+        if isinstance(t, BondTrade) and t.maturity > ref_date:
+            key = BondAttrs(type(t), t.ccy, t.maturity, t.coupon, t.country, t.issue_date, t.isin, t.notional >= 0)
+            try:
+                price, notional = price_notional[key]
+            except KeyError:
+                price_notional[key] = t.price, t.notional
+            else:
+                price_notional[key] = vwap((price, notional), (t.price, t.notional))
+
+    def unpack():
+        for attrs, (p, q) in price_notional.items():
+            kwd = {
+                'trade_date': date2datetime(ref_date),
+                'ccy': attrs.ccy,
+                'maturity': attrs.maturity,
+                'notional': q,
+                'price': p,
+                'coupon': attrs.coupon,
+                'country': attrs.country,
+                'issue_date': attrs.issue_date,
+                'isin': attrs.isin,
+            }
+            yield attrs.cls(**kwd)
+
+    return list(unpack())
+
+
+collapse_handlers = {FXForwardTrade: collapse_fx_fwd,
+                     CashFlow: collapse_cashflow,
+                     IRSTrade: collapse_irs,
+                     CrossCurrencySwapTrade: collapse_ccs,
+                     CrossCurrencySwaptionTrade: collapse_ccs_swaption,
+                     FXOptionTrade: collapse_fx_option,
+                     InflationSwapTrade: collapse_inflation_swap,
+                     OISTrade: collapse_ois,
+                     TenorBasisTrade: collapse_tenor_basis,
+                     SwaptionTrade: collapse_swaption,
+                     XccyBasisTrade: collapse_xccy_basis,
+                     FutureTrade: collapse_futures,
+                     RatesFutureTrade: collapse_futures,
+                     BondFutureTrade: collapse_futures,
+                     StockFutureTrade: collapse_futures,
+                     BondTrade: collapse_bonds}
+
+
+def collapse_trades(trades: List[Trade], ref_date: date) -> List[Trade]:
+    handler_mapping = {}
+    ret_trades = []
+
+    for i, t in enumerate(trades):
+        handler = collapse_handlers.get(type(t), collapse_default)
+        handler_mapping[handler] = handler_mapping.get(handler, []) + [i]
+    for handler, indices in handler_mapping.items():
+        ret_trades += handler([trades[i] for i in indices], ref_date)
+    return ret_trades
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\__init__.py
+----------------------------------------
+from .core import *
+from .convention import *
+from .instrument import *
+from .instrument_spot import *
+from .instrument_type import *
+from .trade import *
+from .position import *
+from .market_data import *
+from .trade_collapse import *
+from .security import *
+
+__all__ = [k for k, v in globals().items() if getattr(v, '__module__', '').startswith(__name__)]
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\.gitignore
+----------------------------------------
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+# Datasource local storage ignored files
+/dataSources/
+/dataSources.local.xml
+# Zeppelin ignored files
+/ZeppelinRemoteNotebooks/
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\firm_domain.iml
+----------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="PYTHON_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$" />
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+  <component name="PyDocumentationSettings">
+    <option name="format" value="PLAIN" />
+    <option name="myDocStringFormat" value="Plain" />
+  </component>
+</module>
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\misc.xml
+----------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.8 (tensorflow_nn)" project-jdk-type="Python SDK" />
+</project>
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\modules.xml
+----------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/firm_domain.iml" filepath="$PROJECT_DIR$/.idea/firm_domain.iml" />
+    </modules>
+  </component>
+</project>
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\workspace.xml
+----------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="0a56fd05-896f-462e-bbaf-dff589454642" name="Changes" comment="" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ProjectId" id="2U4LYNf1SORYwiQf6CnJo1imm5q" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "last_opened_file_path": "C:/Users/generich/OneDrive/Documents/4-Work/generic/Systematic/spreadsheets/firm_domain",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="0a56fd05-896f-462e-bbaf-dff589454642" name="Changes" comment="" />
+      <created>1692193952663</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1692193952663</updated>
+      <workItem from="1692193956129" duration="1806000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\inspectionProfiles\profiles_settings.xml
+----------------------------------------
+<component name="InspectionProjectProfileManager">
+  <settings>
+    <option name="USE_PROJECT_PROFILE" value="false" />
+    <version value="1.0" />
+  </settings>
+</component>
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\.idea\inspectionProfiles\Project_Default.xml
+----------------------------------------
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="DuplicatedCode" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <Languages>
+        <language minSize="144" name="Python" />
+      </Languages>
+    </inspection_tool>
+    <inspection_tool class="PyCompatibilityInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ourVersions">
+        <value>
+          <list size="1">
+            <item index="0" class="java.lang.String" itemvalue="3.11" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\datalayer\bbg_mapping.py
+----------------------------------------
+from functools import singledispatch
+from typing import cast, Dict, Callable, Union, List, Tuple
+import firm_domain as domain
+from firm_domain.core import Ccy, Tenor, IMM, Month, OptionStrat, InflationIndex
+from firm_domain.util.decorators import interface
+from firm_domain.security import Security
+
+INS_BBG_SCALE = {
+    domain.Rate: 100,
+    domain.IRS: 100,
+    domain.OIS: 100,
+    domain.ECBOIS: 100,
+    domain.FRA: 100,
+    domain.IMMFRA: 100,
+    domain.CrossCurrencySwap: 100,
+    domain.TenorBasis: 10000,
+    domain.XccyBasis: 10000,
+    domain.InflationSwap: 100,
+    domain.FXOption: 100,
+}
+
+
+def bbg_scale_factor(inst: domain.Instrument) -> float:
+    return INS_BBG_SCALE.get(type(inst), 1)
+
+
+CCY_PTS_SCALE = {
+    (Ccy.EUR, Ccy.USD): 10000,
+    (Ccy.AUD, Ccy.USD): 10000,
+    (Ccy.GBP, Ccy.USD): 10000,
+    (Ccy.USD, Ccy.KRW): 1,
+    (Ccy.USD, Ccy.HKD): 10000,
+    (Ccy.USD, Ccy.THB): 100,
+    (Ccy.USD, Ccy.SGD): 10000,
+    (Ccy.USD, Ccy.CNH): 10000,
+    (Ccy.USD, Ccy.JPY): 100,
+    (Ccy.NZD, Ccy.USD): 10000,
+    (Ccy.USD, Ccy.ZAR): 10000,
+    (Ccy.USD, Ccy.SAR): 10000,
+    (Ccy.USD, Ccy.RUB): 10000,
+    (Ccy.USD, Ccy.CAD): 10000,
+    (Ccy.USD, Ccy.ILS): 10000,
+    (Ccy.EUR, Ccy.PLN): 10000,
+    (Ccy.USD, Ccy.SEK): 10000,
+    (Ccy.USD, Ccy.MYR): 10000,
+    (Ccy.EUR, Ccy.HUF): 100,
+    (Ccy.USD, Ccy.TWD): 1,
+    (Ccy.USD, Ccy.NTO): 1,
+    (Ccy.USD, Ccy.CLP): 1,
+    (Ccy.USD, Ccy.NOK): 10000,
+    (Ccy.USD, Ccy.CHF): 10000,
+    (Ccy.USD, Ccy.MXN): 10000,
+    (Ccy.USD, Ccy.TRY): 10000,
+}
+
+
+def bbg_fx_point_scale_factor(inst: domain.Instrument) -> float:
+    assert isinstance(inst, domain.FXForward)
+    return CCY_PTS_SCALE[inst.ccy_base, inst.ccy]
+
+
+TENOR_TO_BBG = {
+    Tenor.T_1W: '1Z',
+    Tenor.T_2W: '2Z',
+    Tenor.T_3W: '3Z',
+    Tenor.T_1M: 'A',
+    Tenor.T_2M: 'B',
+    Tenor.T_3M: 'C',
+    Tenor.T_4M: 'D',
+    Tenor.T_5M: 'E',
+    Tenor.T_6M: 'F',
+    Tenor.T_7M: 'G',
+    Tenor.T_8M: 'H',
+    Tenor.T_9M: 'I',
+    Tenor.T_10M: 'J',
+    Tenor.T_11M: 'K',
+    Tenor.T_1Y: '1',
+    Tenor.T_13M: '1A',
+    Tenor.T_14M: '1B',
+    Tenor.T_15M: '1C',
+    Tenor.T_16M: '1D',
+    Tenor.T_17M: '1E',
+    Tenor.T_18M: '1F',
+    Tenor.T_21M: '1I',
+    Tenor.T_2Y: '2',
+    Tenor.T_3Y: '3',
+    Tenor.T_4Y: '4',
+    Tenor.T_5Y: '5',
+    Tenor.T_6Y: '6',
+    Tenor.T_7Y: '7',
+    Tenor.T_8Y: '8',
+    Tenor.T_9Y: '9',
+    Tenor.T_10Y: '10',
+    Tenor.T_11Y: '11',
+    Tenor.T_12Y: '12',
+    Tenor.T_15Y: '15',
+    Tenor.T_20Y: '20',
+    Tenor.T_25Y: '25',
+    Tenor.T_30Y: '30',
+    Tenor.T_35Y: '35',
+    Tenor.T_40Y: '40',
+    Tenor.T_50Y: '50',
+}
+
+
+def tenor_to_bbg(tenor: Tenor, leading_zero=False, pre_1y_pad='') -> str:
+    raw = TENOR_TO_BBG[tenor]
+    front = '0' if leading_zero and len(raw) == 1 else ''
+    if tenor < Tenor.T_1Y:
+        front += pre_1y_pad
+    return front + raw
+
+
+@interface
+@singledispatch
+def bbg_code(inst: Union[domain.Instrument, Security]) -> Tuple[str]:
+    raise ValueError(f"Unable to get bbg_ticker for instrument {inst}")
+
+
+RATES_TO_BBG = {
+    Ccy.USD: {
+        Tenor.T_1D: 'FEDL01 INDEX',
+        Tenor.T_1M: 'US0001M INDEX',
+        Tenor.T_3M: 'US0003M INDEX',
+        Tenor.T_6M: 'US0006M INDEX',
+    },
+    Ccy.EUR: {
+        Tenor.T_1D: 'EONIA INDEX',
+        Tenor.T_1M: 'EUR001M INDEX',
+        Tenor.T_3M: 'EUR003M INDEX',
+        Tenor.T_6M: 'EUR006M INDEX',
+    },
+    Ccy.AUD: {
+        Tenor.T_1D: 'RBACOR INDEX',
+        Tenor.T_1M: 'BBSW1M INDEX',
+        Tenor.T_3M: 'BBSW3M INDEX',
+        Tenor.T_6M: 'BBSW6M INDEX',
+    },
+    Ccy.GBP: {
+        Tenor.T_1D: 'SONIO/N INDEX',
+        Tenor.T_3M: 'BP0003M INDEX',
+        Tenor.T_6M: 'BP0006M INDEX',
+    },
+    Ccy.KRW: {
+        Tenor.T_3M: 'KWCDC INDEX'
+    },
+    Ccy.SGD: {
+        Tenor.T_1D: 'SORF1D INDEX',
+        Tenor.T_3M: 'SORF3M INDEX',
+        Tenor.T_6M: 'SORF6M INDEX',
+    },
+    Ccy.HKD: {
+        Tenor.T_1D: 'HOISHKD INDEX',
+        Tenor.T_1M: 'HIHD01M INDEX',
+        Tenor.T_3M: 'HIHD03M INDEX'
+    },
+    Ccy.THB: {
+        Tenor.T_6M: 'THFX6M INDEX'
+    },
+    Ccy.ILS: {
+        Tenor.T_1D: 'ISSW1 INDEX',
+        Tenor.T_3M: 'TELBOR03 INDEX'
+    },
+    Ccy.CAD: {
+        # Tenor.T_1D: 'CAONREPO INDEX',  # as of 2020-06-18 we are no longer entitled to get this
+        Tenor.T_1D: 'CDSO1Z Curncy',
+        Tenor.T_3M: 'CDOR03 INDEX',
+    },
+    Ccy.JPY: {
+        Tenor.T_1D: 'MUTKCALM INDEX',
+        Tenor.T_3M: 'JY0003M INDEX',
+        Tenor.T_6M: 'JY0006M INDEX',
+    },
+    Ccy.ZAR: {
+        Tenor.T_1D: 'SAONBOR INDEX',
+        Tenor.T_3M: 'JIBA3M INDEX',
+    },
+    Ccy.SAR: {
+        Tenor.T_1D: 'SAIBON INDEX',
+        Tenor.T_3M: 'SAIB3M INDEX',
+    },
+    Ccy.NZD: {
+        Tenor.T_1D: 'NZOCRS INDEX',
+        Tenor.T_3M: 'NDBB3M INDEX',
+    },
+    Ccy.HUF: {
+        Tenor.T_1D: 'BUBORON INDEX',
+        Tenor.T_3M: 'BUBOR03M INDEX',
+        Tenor.T_6M: 'BUBOR06M INDEX'
+    },
+    Ccy.PLN: {
+        Tenor.T_1D: 'PZCFPLNI INDEX',
+        Tenor.T_3M: 'WIBR3M INDEX',
+        Tenor.T_6M: 'WIBR6M INDEX'
+    },
+    Ccy.SEK: {
+        # todo hack because bbg suddenly turned off our data?
+        # Tenor.T_1D: 'STIB1D INDEX',  # as of 2020-05-04 STIB1D is subject to charge
+        # Tenor.T_1D: 'STBB1D INDEX',  # as of 2020-05-05 STBB1D access removed
+        Tenor.T_1D: 'NOWA INDEX',
+        # Tenor.T_3M: 'STIB3M INDEX',  # as of 2020-05-04 STIB3M is subject to charge
+        # Tenor.T_3M: 'STBB3M INDEX',  # as of 2020-05-05 STBB3M access removed
+        Tenor.T_3M: 'NDBB3M INDEX',
+    },
+    Ccy.INR: {
+        Tenor.T_1D: 'IN00O/N INDEX'
+    },
+    Ccy.INO: {
+        Tenor.T_1D: 'IN00O/N INDEX'
+    },
+    Ccy.MYR: {
+        Tenor.T_3M: 'KLIB3M INDEX'
+    },
+    Ccy.TWD: {
+        Tenor.T_3M: 'TAIBOR3M INDEX'
+    },
+    Ccy.NTO: {
+        Tenor.T_3M: 'TAIBOR3M INDEX'
+    },
+    Ccy.NOK: {
+        Tenor.T_1D: 'NOWA INDEX',
+        # todo hack because bbg suddenly turned off our data?
+        # Tenor.T_6M: 'NIBOR6M INDEX',
+        # Tenor.T_3M: 'NIBOR3M INDEX',
+        Tenor.T_6M: 'US0006M INDEX',
+        Tenor.T_3M: 'US0003M INDEX'
+    },
+    Ccy.CHF: {
+        Tenor.T_1D: 'SF0006M INDEX',  # hack should be SRFXON3
+        Tenor.T_6M: 'SF0006M INDEX',
+        Tenor.T_3M: 'SF0003M INDEX'
+    },
+    Ccy.CNY: {
+        Tenor.T_7D: 'CNRR007 INDEX'
+    }
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_rate(inst: domain.Rate) -> Tuple[str]:
+    return (RATES_TO_BBG[inst.ccy][inst.tenor],)
+
+
+def aud_swap_mapper_q(t: Tenor) -> str:
+    if t in [Tenor.T_1Y, Tenor.T_2Y, Tenor.T_3Y]:
+        return 'ADSWAP{t}Q CURNCY'.format(t=tenor_to_bbg(t))
+    return 'ADSWQ{t} CURNCY'.format(t=tenor_to_bbg(t))
+
+
+SPOT_SWAP_TO_BBG = {
+    Ccy.USD: {Tenor.T_3M: lambda x: 'USSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.EUR: {Tenor.T_1M: lambda x: f"EUSW{tenor_to_bbg(x)}V1 CURNCY",
+              Tenor.T_6M: lambda x: 'EUSA{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.AUD: {Tenor.T_3M: aud_swap_mapper_q,
+              Tenor.T_6M: lambda x: 'ADSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.GBP: {Tenor.T_6M: lambda x: 'BPSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.KRW: {Tenor.T_3M: lambda x: 'KWSWNI{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.SGD: {Tenor.T_3M: lambda x: 'SDSWQ{t} CURNCY'.format(t=tenor_to_bbg(x)),
+              Tenor.T_6M: lambda x: 'SDSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.HKD: {Tenor.T_3M: lambda x: 'HDSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.THB: {Tenor.T_6M: lambda x: 'TBSWNI{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.ZAR: {Tenor.T_3M: lambda x: 'SASW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.SAR: {Tenor.T_3M: lambda x: 'SRSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.JPY: {Tenor.T_6M: lambda x: 'JYSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.PLN: {Tenor.T_6M: lambda x: 'PZSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.NZD: {Tenor.T_3M: lambda x: 'NDSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.ILS: {Tenor.T_3M: lambda x: 'ISSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.CAD: {Tenor.T_3M: lambda x: 'CDSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.SEK: {Tenor.T_3M: lambda x: 'SKSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.CNY: {Tenor.T_1W: lambda x: 'CCSWNI{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.TWD: {Tenor.T_3M: lambda x: 'TDSWNI{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.NTO: {Tenor.T_3M: lambda x: 'TDSWO{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.HUF: {Tenor.T_6M: lambda x: 'HFSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.MYR: {Tenor.T_3M: lambda x: 'MRSWNI{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.NOK: {Tenor.T_6M: lambda x: 'NKSW{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.CHF: {Tenor.T_6M: lambda x: 'SFSW{t} CURNCY'.format(t=tenor_to_bbg(x))}
+}
+
+TENOR_TO_BBG_FX = {
+    Tenor.T_1D: 'TN',
+    Tenor.T_1W: '1W',
+    Tenor.T_1M: '1M',
+    Tenor.T_2M: '2M',
+    Tenor.T_3M: '3M',
+    Tenor.T_6M: '6M',
+    Tenor.T_9M: '9M',
+    Tenor.T_1Y: '12M',
+    Tenor.T_2Y: '2Y',
+    Tenor.T_3Y: '3Y',
+    Tenor.T_4Y: '4Y',
+    Tenor.T_5Y: '5Y',
+    Tenor.T_6Y: '6Y',
+    Tenor.T_7Y: '7Y',
+    Tenor.T_8Y: '8Y',
+    Tenor.T_9Y: '9Y',
+    Tenor.T_10Y: '10Y',
+    Tenor.T_12Y: '12Y',
+    Tenor.T_15Y: '15Y',
+    Tenor.T_20Y: '20Y',
+    Tenor.T_25Y: '25Y',
+    Tenor.T_30Y: '30Y'
+}
+
+
+def tenor_to_bbg_fx(tenor: Tenor) -> str:
+    return TENOR_TO_BBG_FX[tenor]
+
+
+def aud_fs_tenor_to_bbg(tenor: Tenor) -> str:
+    if tenor < Tenor.T_1Y:
+        return tenor_to_bbg_fx(tenor)
+    else:
+        return '{t}Y'.format(t=tenor_to_bbg(tenor))
+
+
+def eur_fs_tenor_to_bbg(tenor: Tenor) -> str:
+    if tenor < Tenor.T_1Y:
+        return tenor_to_bbg(tenor)
+    else:
+        return tenor_to_bbg(tenor, leading_zero=True)
+
+
+FORWARD_SWAP_TO_BBG = {
+    Ccy.USD: lambda x, y: 'USFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y)),
+    Ccy.EUR: lambda x, y: 'EUSA{t1}{t2} BLC CURNCY'.format(t1=eur_fs_tenor_to_bbg(x), t2=eur_fs_tenor_to_bbg(y)),
+    Ccy.GBP: lambda x, y: 'BPSW{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.KRW: lambda x, y: 'KWFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.HKD: lambda x, y: 'HDFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.THB: lambda x, y: 'TBFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.SGD: lambda x, y: 'SDFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.ZAR: lambda x, y: 'SAFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.SAR: lambda x, y: 'SRFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.AUD: lambda x, y: 'S0303FS {t1}{t2} BLC CURNCY'.format(t1=aud_fs_tenor_to_bbg(x), t2=aud_fs_tenor_to_bbg(y)),
+    Ccy.PLN: lambda x, y: 'PZFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y, True)),
+    Ccy.JPY: lambda x, y: 'JYFS{t1}{t2} BLC CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y))
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_irs(inst: domain.IRS) -> Tuple[str]:
+    if inst.start is domain.Tenor.SPOT:
+        return (SPOT_SWAP_TO_BBG[inst.ccy][inst.idx](inst.tenor),)
+    return (FORWARD_SWAP_TO_BBG[inst.ccy](inst.start, inst.tenor),)
+
+
+OIS_TO_BBG = {
+    Ccy.USD: lambda x: 'USSO{t} CMPT CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.EUR: lambda x: 'EUSWE{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.GBP: lambda x: 'BPSWS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.JPY: lambda x: 'JYSO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.CAD: lambda x: 'CDSO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.NZD: lambda x: 'NDSO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.PLN: lambda x: 'PZSO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.INR: lambda x: 'IRSWNI{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.INO: lambda x: 'IRSWO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.SEK: lambda x: 'SKSWTN{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.AUD: lambda x: 'ADSO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.CHF: lambda x: 'SFSNT{t} CURNCY'.format(t=tenor_to_bbg(x))
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_ois(inst: domain.OIS) -> Tuple[str]:
+    return (OIS_TO_BBG[inst.ccy](inst.tenor),)
+
+
+ECBOIS_TO_BBG = {
+    Ccy.EUR: lambda x: f"EUSF{x.idx}A CURNCY"
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_ecbois(inst: domain.ECBOIS) -> Tuple[str]:
+    return (ECBOIS_TO_BBG[inst.ccy](inst.start),)
+
+
+IMMOIS_TO_BBG = {
+    Ccy.EUR: lambda start: (f"EUFOSC{start.ith} CURNCY", f"ER{start.month.code()}{str(start.year)[-1]} COMDTY")
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_immois(inst: domain.IMMOIS) -> Tuple[str]:
+    return IMMOIS_TO_BBG[inst.ccy](inst.start)
+
+
+TENOR_BASIS_TO_BBG = {
+    Ccy.USD: {(Tenor.T_1D, Tenor.T_3M): lambda x: 'USBG{t} CURNCY'.format(t=tenor_to_bbg(x)),
+              (Tenor.T_3M, Tenor.T_6M): lambda x: 'USBC{t} CURNCY'.format(t=tenor_to_bbg(x)),
+              (Tenor.T_1M, Tenor.T_3M): lambda x: 'USBA{t} CURNCY'.format(t=tenor_to_bbg(x, False, 'A'))},
+    Ccy.AUD: {(Tenor.T_1D, Tenor.T_3M): lambda x: 'ADBBCO{t} CURNCY'.format(t=tenor_to_bbg(x)),
+              (Tenor.T_1M, Tenor.T_3M): lambda x: 'ADBBCA{t} CURNCY'.format(t=tenor_to_bbg(x)),
+              (Tenor.T_3M, Tenor.T_6M): lambda x: 'ADBBCF{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.EUR: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'EUBSV{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.GBP: {(Tenor.T_1D, Tenor.T_3M): lambda x: 'BPBSSL{t} CURNCY'.format(t=tenor_to_bbg(x)),
+              (Tenor.T_3M, Tenor.T_6M): lambda x: 'BPSFVC{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.PLN: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'PZBSV{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.HKD: {(Tenor.T_1M, Tenor.T_3M): lambda x: 'HDBA{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.HUF: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'HFBSV{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.JPY: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'JYBC{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.CHF: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'CFBSSP{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.NOK: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'NKBFVC{t} CURNCY'.format(t=tenor_to_bbg(x))},
+    Ccy.SGD: {(Tenor.T_3M, Tenor.T_6M): lambda x: 'SDBSVS{t} CURNCY'.format(t=tenor_to_bbg(x))}
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_tenor_basis(inst: domain.TenorBasis) -> Tuple[str]:
+    return (TENOR_BASIS_TO_BBG[inst.ccy][inst.idx_1, inst.idx_2](inst.tenor),)
+
+
+CCS_TO_BBG = {
+    Ccy.INR: lambda x: 'IRSWN{t} CMPT CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.INO: lambda x: 'IRSWN{t} CMPT CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.RUB: lambda x: 'RRUSSW{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.CNH: lambda x: 'CGUSSW{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.TRY: lambda x: 'TYUSSW{t} BGN CURNCY'.format(t=tenor_to_bbg(x)),
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_ccs(inst: domain.CrossCurrencySwap) -> Tuple[str]:
+    return (CCS_TO_BBG[inst.ccy](inst.tenor),)
+
+
+XCCY_BASIS_TO_BBG = {
+    Ccy.EUR: lambda x: 'EUBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.AUD: lambda x: 'ADBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.GBP: lambda x: 'BPBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.KRW: lambda x: 'KRBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.HKD: lambda x: 'HDBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.THB: lambda x: 'HDBA{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.SGD: lambda x: 'SDBS{t} CMPT CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.ZAR: lambda x: 'SABS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.SAR: lambda x: 'SRUSSW{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.PLN: lambda x: 'PZBSEC{t} CMPT CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.NZD: lambda x: 'NDBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.SEK: lambda x: 'SKBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.CAD: lambda x: 'CDBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.JPY: lambda x: 'JYBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.ILS: lambda x: 'ISBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.HUF: lambda x: 'HFEBS{t} CMPT CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.CLP: lambda x: 'ADBBCF{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.PHP: lambda x: 'USBA{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.CHF: lambda x: 'SFBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    Ccy.NOK: lambda x: 'NKBS{t} CURNCY'.format(t=tenor_to_bbg(x)),
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_xccy(inst: domain.XccyBasis) -> Tuple[str]:
+    return (XCCY_BASIS_TO_BBG[inst.ccy](inst.tenor),)
+
+
+SECURITY_TO_BBG = {
+    Security.KR310101G982: 'BBG00PVT67J4'
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_security(sec: Security) -> Tuple[str]:
+    return (SECURITY_TO_BBG[sec],)
+
+
+TENOR_TO_BBG_FRA: Dict[Tenor, int] = {
+    Tenor.T_1M: 1,
+    Tenor.T_2M: 2,
+    Tenor.T_3M: 3,
+    Tenor.T_4M: 4,
+    Tenor.T_5M: 5,
+    Tenor.T_6M: 6,
+    Tenor.T_7M: 7,
+    Tenor.T_8M: 8,
+    Tenor.T_9M: 9,
+    Tenor.T_10M: 10,
+    Tenor.T_11M: 11,
+    Tenor.T_1Y: 12,
+    Tenor.T_13M: 13,
+    Tenor.T_14M: 14,
+    Tenor.T_15M: 15,
+    Tenor.T_16M: 16,
+    Tenor.T_17M: 17,
+    Tenor.T_18M: 18,
+    Tenor.T_21M: 21,
+    Tenor.T_2Y: 24,
+    Tenor.T_3Y: 36
+}
+
+
+def tenors_to_bbg_fra(start: Tenor, tenor: Tenor, slash_style: bool = False) -> str:
+    invert_tenor = {v: k for k, v in TENOR_TO_BBG_FRA.items()}
+
+    ending_tenor = invert_tenor[TENOR_TO_BBG_FRA[start] + TENOR_TO_BBG_FRA[tenor]]
+    if slash_style:
+        return f'{TENOR_TO_BBG_FRA[start]}/{TENOR_TO_BBG_FRA[ending_tenor]}'
+    else:
+        return '{s}{e}'.format(s=tenor_to_bbg(start, True), e=tenor_to_bbg(ending_tenor))
+
+
+FRA_TO_BBG = {
+    Ccy.EUR: lambda x, y: 'EUFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.GBP: lambda x, y: 'BPFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.JPY: lambda x, y: 'JYFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y, True)),
+    Ccy.HKD: lambda x, y: 'HDFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.PLN: lambda x, y: 'PZFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.HUF: lambda x, y: 'HFFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.ZAR: lambda x, y: 'SAFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.SAR: lambda x, y: 'SRFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.ILS: lambda x, y: 'ISFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.CAD: lambda x, y: 'CDFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.NZD: lambda x, y: 'NDFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.AUD: lambda x, y: 'ADFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y)),
+    Ccy.CHF: lambda x, y: 'SFFR{t} CURNCY'.format(t=tenors_to_bbg_fra(x, y))
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_fra(inst: domain.FRA) -> Tuple[str]:
+    if inst.start is domain.Tenor.T_1D:
+        return bbg_ticker_by_rate(domain.Rate(inst.ccy, inst.tenor))
+    return (FRA_TO_BBG[inst.ccy](inst.start, inst.tenor),)
+
+
+IMM_TO_BBG_NUMBER = {
+    IMM(Month.SEP, 2020): '0001',
+    IMM(Month.DEC, 2020): '0101',
+    IMM(Month.MAR, 2021): '0201',
+    IMM(Month.JUN, 2021): '0301',
+    IMM(Month.SEP, 2021): '0401',
+    IMM(Month.DEC, 2021): '0501',
+    IMM(Month.MAR, 2022): '0601',
+    IMM(Month.JUN, 2022): '0701',
+}
+
+IMMFRA_TO_BBG: Dict[Ccy, Callable] = {
+    Ccy.NOK: lambda x, y: f'NKF{TENOR_TO_BBG_FRA[y]}{IMM_TO_BBG_NUMBER[x]} CURNCY'
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_imm_fra(inst: domain.IMMFRA) -> Tuple[str]:
+    return (IMMFRA_TO_BBG[inst.ccy](IMM(year=inst.start.year, month=inst.start.month), inst.tenor),)
+
+
+RATES_FUTURE_STUD = {
+    Ccy.USD: {
+        Tenor.T_3M: 'ED{}{} Comdty'
+    }
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_rates_fut(inst: domain.RatesFuture) -> Tuple[str]:
+    stud = RATES_FUTURE_STUD[inst.ccy][inst.idx]
+    tenor = inst.tenor
+    return (stud.format(tenor.month.code(), str(tenor.year)[-2:]),)
+
+
+CCY_TO_DATA_SOURCE = {
+    Ccy.USD: 'BGN',
+    Ccy.EUR: 'BGNL',
+    Ccy.GBP: 'BGNL',
+    Ccy.KRW: 'CMPT',
+    Ccy.AUD: 'BGNT',
+    Ccy.SGD: 'BGNT',
+    Ccy.HKD: 'BGNT',
+    Ccy.THB: 'CMPT',
+    Ccy.NZD: 'BGNT',
+    Ccy.CNH: 'BGNT',
+    Ccy.JPY: 'BGNT',
+    Ccy.ZAR: 'BGNL',
+    Ccy.TRY: 'BGNL',
+    Ccy.SAR: 'BGNL',
+    Ccy.RUB: 'BGNL',
+    Ccy.PLN: 'BGNL',
+    Ccy.SEK: 'BGNL',
+    Ccy.CLP: 'BGN',
+    Ccy.PHP: 'BGNT',
+    Ccy.CAD: 'BGN',
+    Ccy.INR: 'CMPT',
+    Ccy.CNY: 'BGNT',
+    Ccy.TWD: 'BGNT',
+    Ccy.NTO: 'BGNT',
+    Ccy.IDR: 'BGNT',
+    Ccy.MYR: 'CMPT',
+    Ccy.ILS: 'BGNL',
+    Ccy.HUF: 'BGNL',
+    Ccy.INO: 'CMPT',
+    Ccy.NOK: 'BGNL',
+    Ccy.CHF: 'BGNL',
+    Ccy.MXN: 'BGN',
+}
+
+TRADE_AS_OUTRIGHT = [Ccy.PHP, Ccy.INR, Ccy.CNY, Ccy.IDR, Ccy.TWD, Ccy.NTO, Ccy.MYR, Ccy.INO]
+
+
+def fx_fwd_format(spot_code: str, source: str, pts_code: str = None, outright=False,
+                  spot_source: str = None) -> Callable[[Tenor], str]:
+    if pts_code is None:
+        pts_code = spot_code
+    if spot_source is None:
+        spot_source = source
+
+    pts_or = '+' if outright else ''
+    spot_tail = ' {s} CURNCY'.format(s=spot_source)
+    fwd_tail = ' {s} CURNCY'.format(s=source)
+
+    def ret_func(x: Tenor) -> str:
+
+        if x == Tenor.SPOT:
+            return '{s}{tail}'.format(s=spot_code, tail=spot_tail)
+        else:
+            return '{p}{o}{t}{tail}'.format(p=pts_code, o=pts_or, t=tenor_to_bbg_fx(x), tail=fwd_tail)
+
+    return ret_func
+
+
+FX_FWD_TO_BBG = {
+    (Ccy.EUR, Ccy.USD): fx_fwd_format('EUR', CCY_TO_DATA_SOURCE[Ccy.EUR]),
+    (Ccy.AUD, Ccy.USD): fx_fwd_format('AUD', CCY_TO_DATA_SOURCE[Ccy.AUD]),
+    (Ccy.GBP, Ccy.USD): fx_fwd_format('GBP', CCY_TO_DATA_SOURCE[Ccy.GBP]),
+    (Ccy.USD, Ccy.CAD): fx_fwd_format('CAD', CCY_TO_DATA_SOURCE[Ccy.CAD]),
+    (Ccy.USD, Ccy.KRW): fx_fwd_format('KRW', CCY_TO_DATA_SOURCE[Ccy.KRW], 'KWN', Ccy.KRW in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.PHP): fx_fwd_format('PHP', CCY_TO_DATA_SOURCE[Ccy.PHP], 'PPN', Ccy.PHP in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.INR): fx_fwd_format('INR', CCY_TO_DATA_SOURCE[Ccy.INR], 'IRN', Ccy.INR in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.INO): fx_fwd_format('INR', CCY_TO_DATA_SOURCE[Ccy.INR], 'IRN', Ccy.INO in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.TWD): fx_fwd_format('TWD', CCY_TO_DATA_SOURCE[Ccy.INR], 'NTN', Ccy.TWD in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.NTO): fx_fwd_format('TWD', CCY_TO_DATA_SOURCE[Ccy.INR], 'NTN', Ccy.NTO in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.HKD): fx_fwd_format('HKD', CCY_TO_DATA_SOURCE[Ccy.HKD]),
+    (Ccy.USD, Ccy.THB): fx_fwd_format('THB', CCY_TO_DATA_SOURCE[Ccy.THB]),
+    (Ccy.USD, Ccy.SGD): fx_fwd_format('SGD', CCY_TO_DATA_SOURCE[Ccy.SGD]),
+    (Ccy.USD, Ccy.CNH): fx_fwd_format('CNH', CCY_TO_DATA_SOURCE[Ccy.CNH]),
+    (Ccy.USD, Ccy.JPY): fx_fwd_format('JPY', CCY_TO_DATA_SOURCE[Ccy.JPY]),
+    (Ccy.USD, Ccy.ZAR): fx_fwd_format('ZAR', CCY_TO_DATA_SOURCE[Ccy.ZAR]),
+    (Ccy.USD, Ccy.TRY): fx_fwd_format('TRY', CCY_TO_DATA_SOURCE[Ccy.TRY]),
+    (Ccy.USD, Ccy.MXN): fx_fwd_format('MXN', CCY_TO_DATA_SOURCE[Ccy.MXN]),
+    (Ccy.USD, Ccy.SAR): fx_fwd_format('SAR', CCY_TO_DATA_SOURCE[Ccy.SAR]),
+    (Ccy.USD, Ccy.RUB): fx_fwd_format('RUB', CCY_TO_DATA_SOURCE[Ccy.RUB]),
+    (Ccy.NZD, Ccy.USD): fx_fwd_format('NZD', CCY_TO_DATA_SOURCE[Ccy.NZD]),
+    (Ccy.USD, Ccy.ILS): fx_fwd_format('ILS', CCY_TO_DATA_SOURCE[Ccy.ILS]),
+    (Ccy.EUR, Ccy.PLN): fx_fwd_format('EURPLN', CCY_TO_DATA_SOURCE[Ccy.PLN]),
+    (Ccy.EUR, Ccy.HUF): fx_fwd_format('EURHUF', CCY_TO_DATA_SOURCE[Ccy.HUF]),
+    (Ccy.USD, Ccy.SEK): fx_fwd_format('SEK', CCY_TO_DATA_SOURCE[Ccy.SEK]),
+    (Ccy.USD, Ccy.NOK): fx_fwd_format('NOK', CCY_TO_DATA_SOURCE[Ccy.SEK]),
+    (Ccy.USD, Ccy.CHF): fx_fwd_format('CHF', CCY_TO_DATA_SOURCE[Ccy.SEK]),
+    (Ccy.USD, Ccy.CLP): fx_fwd_format('CLP', CCY_TO_DATA_SOURCE[Ccy.CLP], 'CHN', False),
+    (Ccy.USD, Ccy.CNY): fx_fwd_format('CNY', CCY_TO_DATA_SOURCE[Ccy.CNY], 'CCN', Ccy.CNY in TRADE_AS_OUTRIGHT, 'BGNT'),
+    (Ccy.USD, Ccy.IDR): fx_fwd_format('IDR', CCY_TO_DATA_SOURCE[Ccy.IDR], 'IHN', Ccy.IDR in TRADE_AS_OUTRIGHT, 'CMPT'),
+    (Ccy.USD, Ccy.MYR): fx_fwd_format('MYR', CCY_TO_DATA_SOURCE[Ccy.MYR], 'MRN', Ccy.MYR in TRADE_AS_OUTRIGHT, 'CMPT')
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_fx_fwd(inst: domain.FXForward) -> Tuple[str]:
+    return (FX_FWD_TO_BBG[inst.ccy_base, inst.ccy](inst.tenor),)
+
+
+OPTION_TYPE_TO_BBG_FX = {OptionStrat.STRAD: 'V',
+                         OptionStrat.RR: 'R',
+                         OptionStrat.FLY: 'B'}
+
+TENOR_TO_BBG_FX_OPTION = {
+    Tenor.T_1D: 'TN',
+    Tenor.T_1W: '1W',
+    Tenor.T_2W: '2W',
+    Tenor.T_1M: '1M',
+    Tenor.T_2M: '2M',
+    Tenor.T_3M: '3M',
+    Tenor.T_6M: '6M',
+    Tenor.T_9M: '9M',
+    Tenor.T_1Y: '1Y',
+    Tenor.T_2Y: '2Y',
+    Tenor.T_3Y: '3Y',
+    Tenor.T_4Y: '4Y',
+    Tenor.T_5Y: '5Y',
+    Tenor.T_6Y: '6Y',
+    Tenor.T_7Y: '7Y',
+    Tenor.T_8Y: '8Y',
+    Tenor.T_9Y: '9Y',
+    Tenor.T_10Y: '10Y',
+    Tenor.T_12Y: '12Y',
+    Tenor.T_15Y: '15Y',
+    Tenor.T_20Y: '20Y',
+    Tenor.T_25Y: '25Y',
+    Tenor.T_30Y: '30Y'
+}
+
+
+def tenor_to_bbg_fx_option(tenor: Tenor, option_type: OptionStrat, strike: float):
+    ot: str = OPTION_TYPE_TO_BBG_FX[option_type]
+    strike_str: str = '' if strike == 0 else f'{strike * 100:.0f}'
+    tenor_str: str = TENOR_TO_BBG_FX_OPTION[tenor]
+
+    return f'{strike_str}{ot}{tenor_str}'
+
+
+def fx_vol_bbg_formatter(code: str, bbg_source: str = '') -> Callable[[Tenor, OptionStrat, float], str]:
+    if bbg_source:
+        bbg_source += ' '
+
+    def formatter(x, y, z):
+        return f'{code}{tenor_to_bbg_fx_option(x, y, z)} {bbg_source}CURNCY'
+
+    return formatter
+
+
+FX_OPTION_TO_BBG = {
+    (Ccy.EUR, Ccy.USD): fx_vol_bbg_formatter('EURUSD'),
+    (Ccy.USD, Ccy.JPY): fx_vol_bbg_formatter('USDJPY'),
+    (Ccy.GBP, Ccy.USD): fx_vol_bbg_formatter('GBPUSD'),
+    (Ccy.AUD, Ccy.USD): fx_vol_bbg_formatter('AUDUSD'),
+    (Ccy.USD, Ccy.CNH): fx_vol_bbg_formatter('USDCNH'),
+    (Ccy.USD, Ccy.KRW): fx_vol_bbg_formatter('USDKRW'),
+    (Ccy.USD, Ccy.SGD): fx_vol_bbg_formatter('USDSGD'),
+    (Ccy.USD, Ccy.CAD): fx_vol_bbg_formatter('USDCAD'),
+    (Ccy.USD, Ccy.CNY): fx_vol_bbg_formatter('USDCNY'),
+    (Ccy.USD, Ccy.MXN): fx_vol_bbg_formatter('USDMXN'),
+    (Ccy.USD, Ccy.RUB): fx_vol_bbg_formatter('USDRUB'),
+    (Ccy.USD, Ccy.SAR): fx_vol_bbg_formatter('USDSAR'),
+    (Ccy.USD, Ccy.TRY): fx_vol_bbg_formatter('USDTRY'),
+    (Ccy.USD, Ccy.ZAR): fx_vol_bbg_formatter('USDZAR'),
+    (Ccy.USD, Ccy.HKD): fx_vol_bbg_formatter('USDHKD'),
+    (Ccy.USD, Ccy.PLN): fx_vol_bbg_formatter('EURPLN'),
+    (Ccy.USD, Ccy.THB): fx_vol_bbg_formatter('USDTHB'),
+    (Ccy.USD, Ccy.INR): fx_vol_bbg_formatter('USDINR', bbg_source='BLCS'),
+    (Ccy.USD, Ccy.IDR): fx_vol_bbg_formatter('USDIDR'),
+    (Ccy.USD, Ccy.PHP): fx_vol_bbg_formatter('USDPHP'),
+    (Ccy.USD, Ccy.TWD): fx_vol_bbg_formatter('USDTWD'),
+    (Ccy.USD, Ccy.NTO): fx_vol_bbg_formatter('USDTWD'),
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_fx_option(inst: domain.FXOption) -> Tuple[str]:
+    return (FX_OPTION_TO_BBG[inst.ccy_base, inst.ccy](inst.expiry, inst.strat_type, inst.delta),)
+
+
+SWAPTION_TO_BBG = {
+    Ccy.USD: lambda x, y: 'USSN{t1}{t2} CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y)),
+    Ccy.EUR: lambda x, y: 'EUSN{t1}{t2} CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y)),
+    Ccy.GBP: lambda x, y: 'BPSN{t1}{t2} CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y)),
+    Ccy.KRW: lambda x, y: 'KWSN{t1}{t2} CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y)),
+    Ccy.JPY: lambda x, y: 'JYSN{t1}{t2} CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y)),
+    Ccy.AUD: lambda x, y: 'ADSN{t1}{t2} CURNCY'.format(t1=tenor_to_bbg(x, True), t2=tenor_to_bbg(y))
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_swaption(inst: domain.Swaption) -> Tuple[str]:
+    return (SWAPTION_TO_BBG[inst.ccy](inst.expiry, inst.tenor),)
+
+
+INF_SWAP_TO_BBG = {
+    InflationIndex.CPURNSA: lambda x: 'USSWIT{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.AUCPI: lambda x: 'AUSWIT{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.CPTFEMU: lambda x: 'EUSWI{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.FRCPXTOB: lambda x: 'FRSWI{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.ITCPIUNR: lambda x: 'ILSWI{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.JCPNJGBI: lambda x: 'JYSWIT{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.SPIPC: lambda x: 'SPSWIT{t} CURNCY'.format(t=tenor_to_bbg(x)),
+    InflationIndex.UKRPI: lambda x: 'BPSWIT{t} CURNCY'.format(t=tenor_to_bbg(x))
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_inflation_swap(inst: domain.InflationSwap) -> Tuple[str]:
+    return (INF_SWAP_TO_BBG[inst.index](inst.tenor),)
+
+
+INF_INDEX_TO_BBG = {
+    InflationIndex.CPURNSA: 'CPURNSA INDEX',
+    InflationIndex.AUCPI: 'AUCPI INDEX',
+    InflationIndex.CPTFEMU: 'CPTFEMU INDEX',
+    InflationIndex.FRCPXTOB: 'FRCPXTOB INDEX',
+    InflationIndex.ITCPIUNR: 'ITCPIUNR INDEX',
+    InflationIndex.JCPNJGBI: 'JCPNJGBI INDEX',
+    InflationIndex.SPIPC: 'SPIPC INDEX',
+    InflationIndex.UKRPI: 'UKRPI INDEX'
+}
+
+
+@bbg_code.register
+def bbg_ticker_by_inflation_index(inst: domain.InflationIndex) -> Tuple[str]:
+    return (INF_INDEX_TO_BBG[inst],)
+
+
+bond_source = None
+
+
+def BOND_TO_BBG(bond_name: str) -> str:
+    global bond_source
+    i = bond_name.rfind(' ')
+    left, right = bond_name[:i], bond_name[i + 1:]
+    source = bond_source
+    if source is not None:
+        out = f"{left} {source} {right}"
+    else:
+        out = f"{left} {right}"
+    return out
+
+
+@bbg_code.register
+def bbg_ticker_by_bond(inst: domain.instrument.BondPlaceHolder) -> Tuple[str]:
+    return (BOND_TO_BBG(inst.name),)
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\datalayer\__init__.py
+----------------------------------------
+from .bbg_mapping import *
+
+__all__ = [k for k, v in globals().items() if getattr(v, '__module__', '').startswith(__name__)]
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\datalayer\__pycache__\__init__.cpython-37.pyc
+----------------------------------------
+B
+
+     - c}                   @   s    d dl T dd  e     D  ZdS )    ) *c             C   s&   g | ]\}}t |d d  t r| qS ) 
+__module__  )  getattr 
+startswith __name__) .0 k v  r
+    OE:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/datalayer/__init__.py 
+<listcomp>   s    r
+   N)Z
+bbg_mapping  globals items  __all__r
+   r
+   r
+   r    <module>   s   
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\datehelper.py
+----------------------------------------
+from datetime import datetime, date, time, timedelta, timezone
+from typing import List, Union, Optional, Tuple, cast
+
+from dateutil.relativedelta import relativedelta
+
+
+def date2datetime(d: date) -> datetime:
+    if isinstance(d, datetime):
+        return d
+    assert isinstance(d, date)
+    return datetime.combine(d, time())
+
+
+def make_date(d: Union[date, datetime]) -> date:
+    if isinstance(d, datetime):
+        return d.date()
+    return d
+
+
+def datetime2date(d: datetime) -> date:
+    if isinstance(d, date) and not isinstance(d, datetime):
+        return d
+    assert isinstance(d, datetime)
+    return d.date()
+
+
+def str2date(s: str) -> date:
+    return datetime.strptime(s, '%Y-%m-%d').date()
+
+
+def date2str(d: date) -> str:
+    return date.strftime(d, '%Y-%m-%d')
+
+
+def str2dateB(s: str) -> date:
+    return datetime.strptime(s, '%Y%m%d').date()
+
+
+def date2strB(d: date) -> str:
+    return date.strftime(d, '%Y%m%d')
+
+
+def date2strC(d: date) -> str:
+    return date.strftime(d, '%Y-%m-%dT%H:%M:%S')
+
+
+def str2dateC(s: str) -> datetime:
+    return datetime.strptime(s, '%Y-%m-%dT%H:%M:%S')
+
+
+def create_timeline(base: date, timeline: List[float]) -> List[date]:
+    """
+    Converts vector of doubles representing years to a vector of absolute dates
+    """
+    return [base + relativedelta(days=int(i * 365.25)) for i in timeline]
+
+
+def parse_f3_timestamp(t: str) -> datetime:
+    zone = None
+    if t.endswith('Z'):
+        zone = 'Z'
+        t = t[:-1]
+    if '.' in t:
+        t0, ms = t.split(".")
+        # ms = ms.rjust(6,'0')
+        t = f"{t0}.{ms}"
+        return datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f')
+    else:
+        return datetime.strptime(t, '%Y-%m-%dT%H:%M:%S')
+
+
+def format_f3_timestamp(d: datetime) -> str:
+    return datetime.strftime(d, '%Y-%m-%dT%H:%M:%SZ')
+
+
+def bump_workday(d: Union[date, datetime], n: int) -> Union[date, datetime]:
+    d = d + timedelta(days=n)
+    while d.weekday() > 4:
+        if n < 0:
+            d -= timedelta(days=1)
+        else:
+            d += timedelta(days=1)
+    return d
+
+
+def is_weekday(d: date) -> bool:
+    return d.weekday() <= 4
+
+
+def next_workday(d: Union[date, datetime]) -> Union[date, datetime]:
+    return bump_workday(d, 1)
+
+
+def next_quarter(d: date) -> date:
+    if d.day >= 15:
+        d += timedelta(weeks=3)
+    d = date(d.year, d.month, 15)
+    while d.month % 3:
+        d += timedelta(days=30)
+        d = d.replace(day=15)
+    return d
+
+
+def datetime_clean_date(d: datetime) -> datetime:
+    return date2datetime(d.date())
+
+
+def datetime_utc2local(d: datetime) -> datetime:
+    """
+    Convert a UTC datetime to a localised datetime
+    :param d: datetime.datetime, assume UTC datetime if tzinfo is not specified
+    :return: datetime.datetime in local timezone
+    """
+    if d.tzinfo:
+        utc = d.astimezone(timezone.utc)
+    else:
+        utc = d.replace(tzinfo=timezone.utc)
+    return utc.astimezone().replace(tzinfo=None)
+
+
+def create_date_list(s: str) -> List[date]:
+    out = set()
+    for segment in s.split(','):
+        if '-' not in segment:
+            out.add(datetime.strptime(segment, '%Y%m%d').date())
+        else:
+            range = DateRange.Parse(segment, base_date=date.today())
+            d0, d1 = range.f, range.t
+            while d0 <= d1:
+                if is_weekday(d0):
+                    out.add(d0)
+                d0 += timedelta(days=1)
+    return sorted(out)
+
+
+def test_create_date_list():
+    lst = create_date_list('20190101,20190102,20191010-20191016')
+    assert lst == [
+        date(2019, 1, 1),
+        date(2019, 1, 2),
+        date(2019, 10, 10),
+        date(2019, 10, 11),
+        date(2019, 10, 14),
+        date(2019, 10, 15),
+        date(2019, 10, 16),
+    ]
+
+
+def parse_tenor(tenor: str) -> Tuple[int, str]:
+    return int(tenor[:-1]), tenor[-1].upper()
+
+
+def next_imm_date_rates(d: date, n: int) -> date:
+    def thirdWednesday(d: date) -> date:
+        assert d.day == 1
+        wed = 2
+        firstWed = 1 + (7 - d.weekday() + wed) % 7
+        thirdWed = firstWed + 14
+        d2 = date(d.year, d.month, thirdWed)
+        return d2
+
+    assert n >= 1
+    imm1 = date(d.year - 1, 12, 1)
+    i = 0
+    while True:
+        imm1 = imm1 + relativedelta(months=3)
+        imm = thirdWednesday(imm1)
+        if imm > d:
+            i += 1
+        if i >= n:
+            return imm
+
+
+def next_imm_date_credit(d: date, n: int) -> date:
+    assert n >= 1
+    imm = date(d.year - 1, 12, 20)
+    i = 0
+    while True:
+        imm = imm + relativedelta(months=3)
+        if imm > d:
+            i += 1
+        if i >= n:
+            return imm
+
+
+def is_imm_date_credit(d: date) -> bool:
+    return d.month in [3, 6, 9, 12] and d.day == 20
+
+
+def test_next_imm_date_rates():
+    assert next_imm_date_rates(date(2020, 3, 18), 1) == date(2020, 6, 17)  # same as IMM, roll to next
+    assert next_imm_date_rates(date(2020, 2, 14), 1) == date(2020, 3, 18)
+    assert next_imm_date_rates(date(2020, 3, 14), 1) == date(2020, 3, 18)
+    assert next_imm_date_rates(date(2020, 3, 20), 1) == date(2020, 6, 17)
+    assert next_imm_date_rates(date(2020, 3, 14), 2) == date(2020, 6, 17)
+    assert next_imm_date_rates(date(2020, 12, 14), 1) == date(2020, 12, 16)
+    assert next_imm_date_rates(date(2020, 12, 14), 2) == date(2021, 3, 17)
+
+    assert next_imm_date_rates(date(2020, 2, 14), 1) == date(2020, 3, 18)
+    assert next_imm_date_rates(date(2020, 5, 14), 1) == date(2020, 6, 17)
+    assert next_imm_date_rates(date(2020, 8, 14), 1) == date(2020, 9, 16)
+    assert next_imm_date_rates(date(2020, 11, 14), 1) == date(2020, 12, 16)
+    assert next_imm_date_rates(date(2021, 2, 14), 1) == date(2021, 3, 17)
+    assert next_imm_date_rates(date(2021, 5, 14), 1) == date(2021, 6, 16)
+    assert next_imm_date_rates(date(2021, 8, 14), 1) == date(2021, 9, 15)
+    assert next_imm_date_rates(date(2021, 11, 14), 1) == date(2021, 12, 15)
+
+    d = date(2020, 2, 14)
+    assert next_imm_date_rates(d, 1) == date(2020, 3, 18)
+    assert next_imm_date_rates(d, 2) == date(2020, 6, 17)
+    assert next_imm_date_rates(d, 3) == date(2020, 9, 16)
+    assert next_imm_date_rates(d, 4) == date(2020, 12, 16)
+    assert next_imm_date_rates(d, 5) == date(2021, 3, 17)
+    assert next_imm_date_rates(d, 6) == date(2021, 6, 16)
+    assert next_imm_date_rates(d, 7) == date(2021, 9, 15)
+    assert next_imm_date_rates(d, 8) == date(2021, 12, 15)
+
+    d = date(2019, 12, 18)
+    next_imm_1st = date(2020, 3, 18)
+    next_imm_2nd = date(2020, 6, 17)
+    next_imm_3rd = date(2020, 9, 16)
+    next_imm_8th = date(2021, 12, 15)
+    while d < next_imm_1st:
+        assert next_imm_date_rates(d, 1) == next_imm_1st
+        assert next_imm_date_rates(d, 2) == next_imm_2nd
+        assert next_imm_date_rates(d, 3) == next_imm_3rd
+        assert next_imm_date_rates(d, 8) == next_imm_8th
+        d += timedelta(days=1)
+
+    d = next_imm_1st
+    while d < next_imm_2nd:
+        assert next_imm_date_rates(d, 1) == next_imm_2nd
+        assert next_imm_date_rates(d, 2) == next_imm_3rd
+        assert next_imm_date_rates(d, 7) == next_imm_8th
+        d += timedelta(days=1)
+
+
+def test_next_imm_date_credit():
+    assert next_imm_date_credit(date(2020, 2, 14), 1) == date(2020, 3, 20)
+    assert next_imm_date_credit(date(2020, 3, 14), 1) == date(2020, 3, 20)
+    assert next_imm_date_credit(date(2020, 3, 20), 1) == date(2020, 6, 20)
+    assert next_imm_date_credit(date(2020, 3, 14), 2) == date(2020, 6, 20)
+    assert next_imm_date_credit(date(2020, 12, 14), 1) == date(2020, 12, 20)
+    assert next_imm_date_credit(date(2020, 12, 14), 2) == date(2021, 3, 20)
+
+
+class DateRange:
+    f: date
+    t: date
+
+    def __init__(self, f: date, t: date):
+        self.f = f
+        self.t = t
+
+    @staticmethod
+    def CreateMinMax():
+        return DateRange(date.min, date.max)
+
+    @staticmethod
+    def Parse(input_string: Optional[str],
+              base_date: Optional[date],
+              throw_if_error: bool = True):
+
+        def ensure_date(d: Union[date, datetime]):
+            if isinstance(d, datetime):
+                return d.date()
+            return d
+
+        def parse_date_str(s: str) -> date:
+            def bdate() -> date:
+                assert base_date is not None
+                return cast(date, base_date)
+
+            if s.upper().endswith('Y'):
+                return ensure_date(bdate() + relativedelta(years=int(s[:-1])))
+            if s.upper().endswith('M'):
+                return ensure_date(bdate() + relativedelta(months=int(s[:-1])))
+            if s.upper().endswith('W'):
+                return ensure_date(bdate() + relativedelta(weeks=int(s[:-1])))
+            if s.upper().endswith('D'):
+                return ensure_date(bdate() + relativedelta(days=int(s[:-1])))
+            if len(s) == 8:
+                return datetime.strptime(s, '%Y%m%d').date()
+            if len(s) == 6:
+                return datetime.strptime(s, '%Y%m').date()
+            if len(s) == 4:
+                return datetime.strptime(s, '%Y').date()
+            raise Exception(f"Unable to parse date '{s}'")
+
+        try:
+            if input_string is None:
+                return DateRange.CreateMinMax()
+            else:
+                ss = input_string.split("-")
+                if len(ss) != 2:
+                    raise Exception(f"create_date_range: unable to split string {input_string} to two parts")
+                s0, s1 = ss[0], ss[1]
+                s0x = date.min if s0 in ["*", ""] else parse_date_str(s0)
+                s1x = date.max if s1 in ["*", ""] else parse_date_str(s1)
+                return DateRange(s0x, s1x)
+        except Exception as ex:
+            if throw_if_error:
+                raise Exception(f"Unable to parse date range '{input_string}'") from ex
+            return None
+
+    def isin(self, d: date):
+        return self.f < d <= self.t
+
+    def __str__(self):
+        return f"{date2strB(self.f)}-{date2strB(self.t)}"
+
+    def __repr__(self):
+        return str(self)
+
+
+def test_create_date_range():
+    def create_date_range(s):
+        d = DateRange.Parse(s, base_date=date.today())
+        return d.f, d.t
+
+    a, b = create_date_range('20190101-201902')
+    assert a == date(2019, 1, 1) and b == date(2019, 2, 1)
+    a, b = create_date_range('*-2019')
+    assert a == date.min and b == date(2019, 1, 1)
+    a, b = create_date_range('201903-*')
+    assert a == date(2019, 3, 1) and b == date.max
+    a, b = create_date_range('201903-')
+    assert a == date(2019, 3, 1) and b == date.max
+    d0, d1 = create_date_range("20190101-20200120")
+    assert d0 == date(2019, 1, 1)
+    assert d1 == date(2020, 1, 20)
+    d0, d1 = create_date_range("2019-20200101")
+    assert d0 == date(2019, 1, 1)
+    assert d1 == date(2020, 1, 1)
+    d0, d1 = create_date_range("1M-3Y")
+    assert d0 == date.today() + relativedelta(months=1)
+    assert d1 == date.today() + relativedelta(years=3)
+
+
+def utc2local(utc: datetime) -> datetime:
+    if utc.tzinfo:
+        return utc.astimezone()
+    return utc.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+
+
+if __name__ == '__main__':
+    pass
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\decorators.py
+----------------------------------------
+def interface(f):
+    """ This decorator is used to mark functions which are exposed/used outside f3-shared module """
+    return f
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\exceptionutils.py
+----------------------------------------
+import traceback
+from enum import Enum, auto
+
+from typing import List, Union, Any, Dict, Callable, Optional, TypeVar, Tuple, Sequence
+import logging
+
+import typing
+
+error_token = 'error'
+stack_trace_token = 'stack_trace'
+
+logger = logging.getLogger(__name__)
+
+
+def serialise_exception(ex: BaseException, stack_trace: str) -> Dict[str, str]:
+    list_of_causes = []
+    e: Optional[BaseException] = ex
+    while e is not None:
+        list_of_causes.append(str(e))
+        e = e.__cause__
+    excpstr = "\n--> ".join(list_of_causes)
+    logger.error(excpstr + "\n" + stack_trace)
+    return {
+        error_token: excpstr,
+        stack_trace_token: stack_trace
+    }
+
+
+def get_inner_exception(ex: BaseException, predicate: Callable[[BaseException], bool]) -> Optional[BaseException]:
+    e: Optional[BaseException] = ex
+    while e is not None:
+        if predicate(e):
+            return e
+        e = e.__cause__
+    return None
+
+
+T = TypeVar("T")
+
+
+def linkexcp(outer: T, inner: Exception) -> T:
+    outer.__cause__ = inner  # type:ignore
+    return outer
+
+
+class BypassMode(Enum):
+    Passed = auto()
+    Bypassed = auto()
+
+
+class ValueBypasser:
+    def __init__(self, array: Sequence[T], inclusion_predicate: Callable[[T], bool]):
+        self.__passed: List[T] = []
+        self.__bypassed: List[T] = []
+        self.__order = []
+        for i, a in enumerate(array):
+            if inclusion_predicate(a):
+                self.__order.append((BypassMode.Passed, len(self.__passed)))
+                self.__passed.append(a)
+            else:
+                self.__order.append((BypassMode.Bypassed, len(self.__bypassed)))
+                self.__bypassed.append(a)
+
+    @property
+    def passed(self) -> List[T]:
+        return self.__passed
+
+    @property
+    def bypassed(self) -> List[T]:
+        return self.__bypassed
+
+    def extract_passed(self, values: List) -> List:
+        return self.__extract_values(values, BypassMode.Passed)
+
+    def extract_bypassed(self, values: List) -> List:
+        return self.__extract_values(values, BypassMode.Bypassed)
+
+    def __extract_values(self, values: List, mode: BypassMode) -> List:
+        output = list()
+        assert len(values) == len(self.__order)
+        k = 0
+        for i, j in self.__order:
+            if i == mode:
+                output.append(values[k])
+            k += 1
+        return output
+
+    def recombine_passed(self, passed: Sequence[T]) -> List[T]:
+        assert len(passed) == len(self.__passed)
+        recombined = []
+        for x, y in self.__order:
+            if x == BypassMode.Passed:
+                recombined.append(passed[y])
+            else:
+                recombined.append(self.__bypassed[y])
+        return recombined
+
+
+def create_exception_bypasser(array: Sequence[Union[Any, BaseException]]) -> ValueBypasser:
+    return ValueBypasser(array, lambda a: not isinstance(a, BaseException))
+
+
+def test_ExceptionBypasser():
+    array = [1, 2, 3, Exception("A"), 5, Exception("B")]
+    bypasser = create_exception_bypasser(array)
+
+    assert bypasser.passed == [1, 2, 3, 5]
+    assert [str(e) for e in bypasser.bypassed] == ["A", "B"]
+
+    values2 = [v * 10 for v in bypasser.passed]
+
+    array2 = bypasser.recombine_passed(values2)
+
+    assert [str(i) for i in array2] == ["10", "20", "30", "A", "50", "B"]
+
+    passed = bypasser.extract_passed([111, 222, 333, 444, 555, 666])
+    bypassed = bypasser.extract_bypassed([111, 222, 333, 444, 555, 666])
+    assert passed == [111, 222, 333, 555]
+    assert bypassed == [444, 666]
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\fileutils.py
+----------------------------------------
+import os
+import re
+import traceback
+from abc import ABC
+from datetime import date, datetime
+from typing import Any, Union, Optional, cast, Callable
+import pickle
+import pandas as pd
+import math
+from firm_domain.util import date2strC, date2str
+from firm_domain.util.exceptionutils import serialise_exception
+
+try:
+    from bson import ObjectId
+except ImportError:
+    ObjectId = None
+
+
+def ensure_dir_exists(directory: str) -> bool:
+    directory = os.path.abspath(directory)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        return True
+    else:
+        return False
+
+
+def string_to_file(data: str, file: str) -> None:
+    directory = os.path.dirname(file)
+    ensure_dir_exists(directory)
+    with open(file, 'w') as writer:
+        writer.write(data)
+
+
+def string_from_file(file: str) -> str:
+    with open(file, 'r') as reader:
+        return reader.read()
+
+
+def object_to_jsonfile(obj: Any, file: str) -> None:
+    from json import dumps
+    ensure_dir_exists(os.path.dirname(file))
+    json = dumps(obj, sort_keys=True, indent=4)
+    string_to_file(json, file)
+
+
+def object_to_picklefile(obj: Any, file: str) -> None:
+    ensure_dir_exists(os.path.dirname(file))
+    with open(file, 'wb') as writer:
+        pickle.dump(obj, writer)
+
+
+class JsonSerialiserBase(ABC):
+    def serialise(self, value: Any) -> Any:
+        pass
+
+
+class JsonSerialiserObjectIdOnly(JsonSerialiserBase):
+    def serialise(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return [self.serialise(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self.serialise(i) for i in value)
+        if isinstance(value, set):
+            return {self.serialise(v) for v in value}
+        if isinstance(value, dict):
+            return dict([(k, self.serialise(v)) for k, v in value.items()])
+        if isinstance(ObjectId, type) and isinstance(value, ObjectId):
+            return str(value)
+        return value
+
+
+class JsonSerialiser(JsonSerialiserBase):
+    key_fmter: Callable[[Any], Any]
+
+    def __init__(self, key_fmter: Callable[[Any], str] = lambda x: str(x)):
+        self.key_fmter = key_fmter
+
+    def serialise(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return [self.serialise(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self.serialise(i) for i in value)
+        if isinstance(value, set):
+            return {self.serialise(v) for v in value}
+        if isinstance(value, dict):
+            return dict([(self.key_fmter(k), self.serialise(v)) for k, v in value.items()])
+        if getattr(value, "as_json_object", None) is not None:
+            return value.as_json_object(self)
+        if isinstance(value, datetime):
+            return date2strC(value)
+        if isinstance(value, date):
+            return date2str(value)
+        if isinstance(value, float) and math.isnan(value):
+            return "NaN"
+        if isinstance(value, BaseException):
+            return serialise_exception(value, traceback.format_exc())
+        return value
+
+
+def format_float_or_string(value: Optional[Union[float, str, BaseException]]) -> Union[float, str]:
+    """
+    This function converts objects which are not json-serialisable (e.g. exceptions and NaNs) to strings
+    """
+    if isinstance(value, float) and math.isnan(value):
+        return "NaN"
+    if value is None:
+        return "None"
+    if isinstance(value, BaseException):
+        return str(value)
+    return cast(Union[float, str], value)
+
+
+def object_from_picklefile(file: str) -> None:
+    with open(file, 'rb') as reader:
+        return pickle.load(reader)
+
+
+def rotate_filename(filepath: str) -> str:
+    """
+    If 'c:\path\to\filename.txt' exists, this function returns 'c:\path\to\filename~0.txt'
+    If 'c:\path\to\filename.txt~0' exists, this function returns 'c:\path\to\filename~1.txt'
+    and so on ...
+    """
+    if not os.path.exists(filepath):
+        return filepath
+    stem, ext = os.path.splitext(filepath)
+    m = re.match('([^~]*)~(\d+)$', stem)
+    if not m:
+        return rotate_filename(f"{stem}~0{ext}")
+    else:
+        i = int(m[2]) + 1
+        return rotate_filename(f"{m[1]}~{i}{ext}")
+
+
+def format_filename(s: str) -> str:
+    """
+    Convert string to valid filename
+    """
+    import string
+    valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
+    filename = ''.join(c for c in s if c in valid_chars)
+    return filename
+
+
+def read_excel_sheet(filename: str, splitter='?') -> pd.DataFrame:
+    sheet_name = 0
+    filesplit = filename.split('?')
+    if len(filesplit) == 2:
+        filename = filesplit[0]
+        sheet_name = filesplit[1]
+    df = pd.read_excel(filename, sheet_name)
+    return df
+
+
+class ObjectCache:
+    directory: Optional[str]
+
+    def __init__(self, directory: Optional[str]):
+        self.directory = directory
+        if self.directory:
+            ensure_dir_exists(self.directory)
+
+    def __filename(self, name: str) -> str:
+        assert self.directory is not None
+        return os.path.join(self.directory, f"{name}.cached")
+
+    def load(self, name: str) -> Any:
+        if not self.directory:
+            raise Exception("Directory is not set")
+        fn = self.__filename(name)
+        with open(fn, 'rb')as reader:
+            return pickle.load(reader)
+
+    def execute(self, name: str, loader: Callable[[], Any], force: bool = False) -> Any:
+        if not self.directory:
+            return loader()
+        fn = self.__filename(name)
+        if os.path.exists(fn) and not force:
+            with open(fn, 'rb')as reader:
+                return pickle.load(reader)
+        else:
+            o = loader()
+            with open(fn, 'wb')as writer:
+                pickle.dump(o, writer)
+            return o
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\stringutils.py
+----------------------------------------
+def remove_prefix(txt: str, prefix: str) -> str:
+    if txt.startswith(prefix):
+        return txt[len(prefix):]
+    return txt
+
+
+def remove_suffix(txt: str, suffix: str) -> str:
+    if txt.endswith(suffix):
+        return txt[:-len(suffix)]
+    return txt
+
+
+def test_remove_prefix_suffix():
+    assert remove_prefix('abcdefa', 'abc') == 'defa'
+    assert remove_prefix('abcdefa', 'xabc') == 'abcdefa'
+    assert remove_prefix('abcdefa', 'abcdefa') == ''
+    assert remove_suffix('abcdefa', 'defa') == 'abc'
+    assert remove_suffix('abcdefa', 'abcdefa') == ''
+    assert remove_suffix('abcdefa', 'xxx') == 'abcdefa'
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\__init__.py
+----------------------------------------
+from .datehelper import *
+
+__all__ = [k for k, v in globals().items() if getattr(v, '__module__', '').startswith(__name__)]
+
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\__pycache__\decorators.cpython-37.pyc
+----------------------------------------
+B
+
+     - c                    @   s   d d  Z dS )c             C   s   | S )zZ This decorator is used to mark functions which are exposed/used outside f3-shared module   ) fr   r    LE:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/util/decorators.py 	interface   s    r   N)r   r   r   r   r    <module>        
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\__pycache__\exceptionutils.cpython-37.pyc
+----------------------------------------
+B
+
+     - c 
+                  @   s   d dl Z d dlmZmZ d dlmZmZm Z mZm	Z	m
+Z
+m
+Z
+mZm
+Z
+ d dlZd dlZdZdZe e Zeeeeef d d d Zee	egef e
+e d	 d
+d
+ Ze
+d Zeeed
+ dd ZG dd  de ZG dd  d Ze
+ee ef  ed dd Zdd  ZdS )     N) Enum auto)	 List Union Any Dict Callable Optional  TypeVar Tuple Sequence error 
+stack_trace) exr    returnc             C   sR   g }| }x |d k	r(|  t|   |j}q
+W d | }t |d |   t|t |iS )Nz
+-->  
+) append str 	__cause__ join loggerr
+    
+error_token stack_trace_token)r   r   Zlist_of_causes eZ excpstr  r    PE:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/util/exceptionutils.py serialise_exception   s    
+
+
+r   )r    	predicater   c             C   s(   | }x|d k	r"|| r|S |j }qW d S )N)r   )r   r   r   r   r   r    get_inner_exception   s    
+
+r    T) outer innerr   c             C   s
+   || _ | S )N)r   )r    r!   r   r   r    linkexcp)   s    r"   c               @   s   e Zd Ze  Ze  ZdS ) 
+BypassModeN) __name__ 
+__module__ __qualname__r    Passed Bypassedr   r   r   r   r#   .   s   r#   c               @   s    e Zd Zee eegef d dd Z ee	e d dd  Z
+ee	e d d d  Z
+e	e	d	 d
+d
+ Ze	e	d	 dd
+ Z
+e	ee	d dd Zee e	e d dd ZdS ) 
+ValueBypasser) array inclusion_predicatec             C   s~   g | _ g | _g | _xft| D ]Z\}}|| rR| j tjt | j  f  | j  |  q| j tjt | j f  | j |  qW d S )N)	 _ValueBypasser__passed _ValueBypasser__bypassed _ValueBypasser__order 	enumerater   r#   r'    lenr(   ) selfr*   r+    i ar   r   r    __init__4   s    zValueBypasser.__init__)r   c             C   s   | j S )N)r,   )r1   r   r   r    passed@   s    zValueBypasser.passedc             C   s   | j S )N)r-   )r1   r   r   r    bypassedD   s    zValueBypasser.bypassed) valuesr   c             C   s   |   |tj S )N) _ValueBypasser__extract_valuesr#   r'   )r1   r7   r   r   r    extract_passedH   s    zValueBypasser.extract_passedc             C   s   |   |tj S )N)r8   r#   r(   )r1   r7   r   r   r    extract_bypassedK   s    zValueBypasser.extract_bypassed)r7    moder   c              C   sV   t   }t| t| j kst d}x0| jD ]&\}}||krF| ||   |d7 }q(W |S )Nr       ) listr0   r.    AssertionErrorr   ) r1   r7   r;    output kr2    jr   r   r   Z__extract_valuesN   s    zValueBypasser.__extract_values)r5   r   c             C   s\   t | t | j kst g }x<| jD ]2\}}|tjkrD| ||   q"| | j |   q"W |S )N)r0   r,   r>   r.   r#   r'   r   r-   )r1   r5   Z
+recombined x yr   r   r    recombine_passedX   s    
+zValueBypasser.recombine_passedN)r$   r%   r&   r   r   r    boolr4    propertyr   r5   r6   r9   r:   r#   r8   rD   r   r   r   r   r)   3   s   
+r)   )r*   r   c             C   s   t | dd   S )Nc             S   s   t | t  S )N) 
+isinstance 
+BaseException)r3   r   r   r    <lambda>d        z+create_exception_bypasser.<locals>.<lambda>)r)   )r*   r   r   r    create_exception_bypasserc   s    rK   c              C   s    dddt d dt d g} t|  }|jddddgks6t d d  |jD  ddgksRt d	d  |jD  }| | }d
+d  |D  d
+dd
+dddgks t | ddddddg }|  ddddddg }|ddddgks t |ddgks t d S )Nr<            A     Bc             S   s   g | ]}t |  qS r   )r   ) .0r   r   r   r    
+<listcomp>l   s    z*test_ExceptionBypasser.<locals>.<listcomp>c             S   s   g | ]}|d   qS ) 
+   r   )rQ    vr   r   r   rR   n   s    c             S   s   g | ]}t |  qS r   )r   )rQ   r2   r   r   r   rR   r   s     10Z20Z30Z50 o        iM  i   i+  i   ) 	ExceptionrK   r5   r>   r6   rD   r9   r:   )r*   ZbypasserZ values2Zarray2r5   r6   r   r   r    test_ExceptionBypasserg   s    
+"rY   )  	traceback enumr   r    typingr   r   r   r    r   r	   r
+   r
+   r     loggingr   r    	getLoggerr$   r   rH   r   r   rE   r   r   rX   r"   r#   r)   rK   rY   r   r   r   r    <module>   s   ,
+ 	0
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\__pycache__\stringutils.cpython-37.pyc
+----------------------------------------
+B
+
+     - ci                  @   s0   e e e d  dd Ze e e d dd Zdd   ZdS )	) txt prefix returnc             C   s   |   | r| t| d   S | S )N) 
+startswith len)r   r     r    ME:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/util/stringutils.py 
+remove_prefix   s    
+r   )r    suffixr   c             C   s    |   | r| d t| 
+   S | S )N) endswithr   )r   r	   r   r   r     
+remove_suffix    s    
+r
+   c               C   sp   t dd dkst t dd dks$t t dd dks6t tdd dksHt tdd dksZt tdd dkslt d S ) NZ abcdefa abcZdefaZxabc  Zxxx)r    AssertionErrorr
+   r   r   r   r     test_remove_prefix_suffix
+   s    r   N) strr   r
+   r   r   r   r   r     <module>   s   
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\util\__pycache__\__init__.cpython-37.pyc
+----------------------------------------
+B
+
+     - c|                   @   s    d dl T dd  e     D  ZdS )    ) *c             C   s&   g | ]\}}t |d d  t r| qS ) 
+__module__  )  getattr 
+startswith __name__) .0 k v  r
+    JE:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/util/__init__.py 
+<listcomp>   s    r
+   N)Z
+datehelper  globals items  __all__r
+   r
+   r
+   r    <module>   s   
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\__pycache__\printable_enum.cpython-37.pyc
+----------------------------------------
+B
+
+     - c                   @   s    d dl mZ G dd  de ZdS )     ) Enumc               @   s8   e Zd Zed dd Zed dd Zdd   Zdd	  Z d
+S )
+ 
+PrintableEnum) returnc             C   s   |     S )N)  __str__) self  r     KE:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/printable_enum.py __repr__   s    zPrintableEnum.__repr__c             C   s   | j S )N) name)r   r    r    r   r      s    zPrintableEnum.__str__c             C   s"   t |t|   r| j|jk S || kS )N) 
+isinstance type value)r    otherr    r    r    __lt__
+   s    zPrintableEnum.__lt__c             C   s"   t |t|   r| j|jkS || kS )N)r
+   r   r
+   )r   r   r    r    r    __le__   s    zPrintableEnum.__le__N) __name__ 
+__module__ __qualname__ strr	   r   r   r   r    r    r    r   r      s   r   N) enumr   r   r    r    r    r    <module>   s   
+........................................
+File Path: C:\Users\generich\OneDrive\Documents\4-Work\generic\Systematic\spreadsheets\firm_domain\__pycache__\__init__.cpython-37.pyc
+----------------------------------------
+B
+
+     - cf                  @   sh   d dl T d dlT d dlT d dlT d dlT d dlT d dlT d dl T d dlT d dl	T dd  e
+   
+  D  ZdS )    ) *c             C   s&   g | ]\}}t |d d  t r| qS ) 
+__module__  )  getattr 
+startswith __name__) .0 k v  r
+    EE:\firm\Dev\systematic\venv\Lib\site-packages\firm_domain/__init__.py 
+<listcomp>   s    r
+   N)
+ coreZ
+conventionZ
+instrumentZinstrument_spotZinstrument_type trade positionZ
+market_dataZtrade_collapse security  globals items  __all__r
+   r
+   r
+   r    <module>   s   
+........................................

@@ -1,0 +1,2680 @@
+import datetime
+from dataclasses import dataclass, field
+from typing import Tuple, Sequence, Dict
+
+from sylo.datetime import fx_calendar
+from sylo.datetime.common import DayCountConvention
+from sylo.datetime.fx_calendar import FxCalendar
+from sylo.db.timescale.uat.ssl_bfix import SSLBfix, SSLBfixDerived
+from sylo.mdp.mdp import MarketDataProvider, BConMarketDataProvider
+from sylo.mdp.ts_bfix import BFixDataProvider
+from sylo.models.tc import TransactionCost, FxCost, NDFCost, Amount, Unit
+from .forex import Forex, ForexChain
+
+
+@dataclass
+class TimescaleMixin:
+    history_start: datetime.date = datetime.date(2010, 1, 1)
+    market_data_provider: MarketDataProvider = BFixDataProvider(orm_cls=SSLBfixDerived)
+    market_data_provider_use_cache: bool = True
+
+
+@dataclass
+class TimescaleRawMixin:
+    history_start: datetime.date = datetime.date(2010, 1, 1)
+    market_data_provider: MarketDataProvider = BFixDataProvider(orm_cls=SSLBfix, keep_live=True)
+    market_data_provider_use_cache: bool = True
+
+
+@dataclass
+class EURx(Forex):
+    curve_currency: Tuple[str, str] = ('EUR', 'USD')
+    curve_calendar: FxCalendar = fx_calendar.EUR()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'EURON Curncy', '-1b/0b': 'EURTN Curncy', '0b': 'EUR Curncy', '0b/1b': 'EURSN Curncy',
+        '0b/1w': 'EUR1W Curncy', '0b/2w': 'EUR2W Curncy', '0b/3w': 'EUR3W Curncy',
+        '0b/1m': 'EUR1M Curncy', '0b/2m': 'EUR2M Curncy', '0b/3m': 'EUR3M Curncy',
+        '0b/4m': 'EUR4M Curncy', '0b/5m': 'EUR5M Curncy', '0b/6m': 'EUR6M Curncy',
+        '0b/9m': 'EUR9M Curncy', '0b/12m': 'EUR12M Curncy', '0b/18m': 'EUR18M Curncy', '0b/2y': 'EUR2Y Curncy',
+        '0b/mar': 'EURMAR Curncy', '0b/mb4': 'EURMB4 Curncy', '0b/jun': 'EURJUN Curncy', '0b/mb7': 'EURMB7 Curncy',
+        '0b/sep': 'EURSEP Curncy', '0b/mb10': 'EURMB10 Curncy', '0b/dec': 'EURDEC Curncy', '0b/mb1': 'EURMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class EUR190T(EURx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 12, 18)
+
+
+@dataclass
+class EUR020L(EURx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 12, 18)
+
+
+@dataclass
+class EUR050N(EURx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 12, 18)
+
+
+@dataclass
+class EUR140x(EURx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class EUR150x(EURx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class EUR180x(EURx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class EUR(EURx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        EUR190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        EUR020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        EUR050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        EUR140x(history_start=datetime.date(2007, 8, 28)),
+        EUR150x(history_start=datetime.date(2007, 8, 28)),
+        EUR180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class EURz(TimescaleMixin, EURx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class EUR140z(EURz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class EUR150z(EURz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class EUR180z(EURz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class EURzz(EURz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class GBPx(Forex):
+    curve_currency: Tuple[str, str] = ('GBP', 'USD')
+    curve_calendar: FxCalendar = fx_calendar.GBP()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'GBPON Curncy', '-1b/0b': 'GBPTN Curncy', '0b': 'GBP Curncy', '0b/1b': 'GBPSN Curncy',
+        '0b/1w': 'GBP1W Curncy', '0b/2w': 'GBP2W Curncy', '0b/3w': 'GBP3W Curncy',
+        '0b/1m': 'GBP1M Curncy', '0b/2m': 'GBP2M Curncy', '0b/3m': 'GBP3M Curncy',
+        '0b/4m': 'GBP4M Curncy', '0b/5m': 'GBP5M Curncy', '0b/6m': 'GBP6M Curncy',
+        '0b/9m': 'GBP9M Curncy', '0b/12m': 'GBP12M Curncy', '0b/18m': 'GBP18M Curncy', '0b/2y': 'GBP2Y Curncy',
+        '0b/mar': 'GBPMAR Curncy', '0b/mb4': 'GBPMB4 Curncy', '0b/jun': 'GBPJUN Curncy', '0b/mb7': 'GBPMB7 Curncy',
+        '0b/sep': 'GBPSEP Curncy', '0b/mb10': 'GBPMB10 Curncy', '0b/dec': 'GBPDEC Curncy', '0b/mb1': 'GBPMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class GBP190T(GBPx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1987, 1, 2)
+
+
+@dataclass
+class GBP020L(GBPx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1987, 1, 2)
+
+
+@dataclass
+class GBP050N(GBPx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1987, 1, 2)
+
+
+@dataclass
+class GBP140x(GBPx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class GBP150x(GBPx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class GBP180x(GBPx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class GBP(GBPx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        GBP190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        GBP020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        GBP050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        GBP140x(history_start=datetime.date(2007, 8, 28)),
+        GBP150x(history_start=datetime.date(2007, 8, 28)),
+        GBP180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class GBPz(TimescaleMixin, GBPx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class GBP140z(GBPz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class GBP150z(GBPz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class GBP180z(GBPz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class GBPzz(GBPz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class AUDx(Forex):
+    curve_currency: Tuple[str, str] = ('AUD', 'USD')
+    curve_calendar: FxCalendar = fx_calendar.AUD()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'AUDON Curncy', '-1b/0b': 'AUDTN Curncy', '0b': 'AUD Curncy', '0b/1b': 'AUDSN Curncy',
+        '0b/1w': 'AUD1W Curncy', '0b/2w': 'AUD2W Curncy', '0b/3w': 'AUD3W Curncy',
+        '0b/1m': 'AUD1M Curncy', '0b/2m': 'AUD2M Curncy', '0b/3m': 'AUD3M Curncy',
+        '0b/4m': 'AUD4M Curncy', '0b/5m': 'AUD5M Curncy', '0b/6m': 'AUD6M Curncy',
+        '0b/9m': 'AUD9M Curncy', '0b/12m': 'AUD12M Curncy', '0b/18m': 'AUD18M Curncy', '0b/2y': 'AUD2Y Curncy',
+        '0b/mar': 'AUDMAR Curncy', '0b/mb4': 'AUDMB4 Curncy', '0b/jun': 'AUDJUN Curncy', '0b/mb7': 'AUDMB7 Curncy',
+        '0b/sep': 'AUDSEP Curncy', '0b/mb10': 'AUDMB10 Curncy', '0b/dec': 'AUDDEC Curncy', '0b/mb1': 'AUDMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class AUD190T(AUDx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1983, 12, 13)
+
+
+@dataclass
+class AUD020L(AUDx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1983, 12, 13)
+
+
+@dataclass
+class AUD050N(AUDx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1983, 12, 13)
+
+
+@dataclass
+class AUD140x(AUDx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class AUD150x(AUDx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class AUD180x(AUDx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class AUD(AUDx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        AUD190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        AUD020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        AUD050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        AUD140x(history_start=datetime.date(2007, 8, 28)),
+        AUD150x(history_start=datetime.date(2007, 8, 28)),
+        AUD180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class AUDz(TimescaleMixin, AUDx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class AUD140z(AUDz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class AUD150z(AUDz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class AUD180z(AUDz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class AUDzz(AUDz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class NZDx(Forex):
+    curve_currency: Tuple[str, str] = ('NZD', 'USD')
+    curve_calendar: FxCalendar = fx_calendar.NZD()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'NZDON Curncy', '-1b/0b': 'NZDTN Curncy', '0b': 'NZD Curncy', '0b/1b': 'NZDSN Curncy',
+        '0b/1w': 'NZD1W Curncy', '0b/2w': 'NZD2W Curncy', '0b/3w': 'NZD3W Curncy',
+        '0b/1m': 'NZD1M Curncy', '0b/2m': 'NZD2M Curncy', '0b/3m': 'NZD3M Curncy',
+        '0b/4m': 'NZD4M Curncy', '0b/5m': 'NZD5M Curncy', '0b/6m': 'NZD6M Curncy',
+        '0b/9m': 'NZD9M Curncy', '0b/12m': 'NZD12M Curncy', '0b/18m': 'NZD18M Curncy', '0b/2y': 'NZD2Y Curncy',
+        '0b/mar': 'NZDMAR Curncy', '0b/mb4': 'NZDMB4 Curncy', '0b/jun': 'NZDJUN Curncy', '0b/mb7': 'NZDMB7 Curncy',
+        '0b/sep': 'NZDSEP Curncy', '0b/mb10': 'NZDMB10 Curncy', '0b/dec': 'NZDDEC Curncy', '0b/mb1': 'NZDMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class NZD190T(NZDx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class NZD020L(NZDx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class NZD050N(NZDx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class NZD140x(NZDx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class NZD150x(NZDx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class NZD180x(NZDx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class NZD(NZDx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        NZD190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        NZD020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        NZD050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        NZD140x(history_start=datetime.date(2007, 8, 28)),
+        NZD150x(history_start=datetime.date(2007, 8, 28)),
+        NZD180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class NZDz(TimescaleMixin, NZDx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class NZD140z(NZDz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class NZD150z(NZDz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class NZD180z(NZDz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class NZDzz(NZDz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class CADx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'CAD')
+    curve_calendar: FxCalendar = fx_calendar.CAD()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-1b/0b': 'CADON Curncy', '0b': 'CAD Curncy', '0b/1b': 'CADTN Curncy',
+        '0b/1w': 'CAD1W Curncy', '0b/2w': 'CAD2W Curncy', '0b/3w': 'CAD3W Curncy',
+        '0b/1m': 'CAD1M Curncy', '0b/2m': 'CAD2M Curncy', '0b/3m': 'CAD3M Curncy',
+        '0b/4m': 'CAD4M Curncy', '0b/5m': 'CAD5M Curncy', '0b/6m': 'CAD6M Curncy',
+        '0b/9m': 'CAD9M Curncy', '0b/12m': 'CAD12M Curncy', '0b/18m': 'CAD18M Curncy', '0b/2y': 'CAD2Y Curncy',
+        '0b/mar': 'CADMAR Curncy', '0b/mb4': 'CADMB4 Curncy', '0b/jun': 'CADJUN Curncy', '0b/mb7': 'CADMB7 Curncy',
+        '0b/sep': 'CADSEP Curncy', '0b/mb10': 'CADMB10 Curncy', '0b/dec': 'CADDEC Curncy', '0b/mb1': 'CADMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class CAD190T(CADx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class CAD020L(CADx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class CAD050N(CADx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class CAD140x(CADx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class CAD150x(CADx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class CAD180x(CADx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class CAD(CADx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        CAD190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        CAD020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        CAD050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        CAD140x(history_start=datetime.date(2007, 8, 28)),
+        CAD150x(history_start=datetime.date(2007, 8, 28)),
+        CAD180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class CADz(TimescaleMixin, CADx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CAD140z(CADz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class CAD150z(CADz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class CAD180z(CADz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CADzz(CADz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class CHFx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'CHF')
+    curve_calendar: FxCalendar = fx_calendar.CHF()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'CHFON Curncy', '-1b/0b': 'CHFTN Curncy', '0b': 'CHF Curncy', '0b/1b': 'CHFSN Curncy',
+        '0b/1w': 'CHF1W Curncy', '0b/2w': 'CHF2W Curncy', '0b/3w': 'CHF3W Curncy',
+        '0b/1m': 'CHF1M Curncy', '0b/2m': 'CHF2M Curncy', '0b/3m': 'CHF3M Curncy',
+        '0b/4m': 'CHF4M Curncy', '0b/5m': 'CHF5M Curncy', '0b/6m': 'CHF6M Curncy',
+        '0b/9m': 'CHF9M Curncy', '0b/12m': 'CHF12M Curncy', '0b/18m': 'CHF18M Curncy', '0b/2y': 'CHF2Y Curncy',
+        '0b/mar': 'CHFMAR Curncy', '0b/mb4': 'CHFMB4 Curncy', '0b/jun': 'CHFJUN Curncy', '0b/mb7': 'CHFMB7 Curncy',
+        '0b/sep': 'CHFSEP Curncy', '0b/mb10': 'CHFMB10 Curncy', '0b/dec': 'CHFDEC Curncy', '0b/mb1': 'CHFMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class CHF190T(CHFx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class CHF020L(CHFx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class CHF050N(CHFx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class CHF140x(CHFx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class CHF150x(CHFx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class CHF180x(CHFx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class CHF(CHFx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        CHF190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        CHF020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        CHF050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        CHF140x(history_start=datetime.date(2007, 8, 28)),
+        CHF150x(history_start=datetime.date(2007, 8, 28)),
+        CHF180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class CHFz(TimescaleMixin, CHFx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CHF140z(CHFz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class CHF150z(CHFz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class CHF180z(CHFz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CHFzz(CHFz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class NOKx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'NOK')
+    curve_calendar: FxCalendar = fx_calendar.NOK()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'NOKON Curncy', '-1b/0b': 'NOKTN Curncy', '0b': 'NOK Curncy', '0b/1b': 'NOKSN Curncy',
+        '0b/1w': 'NOK1W Curncy', '0b/2w': 'NOK2W Curncy', '0b/3w': 'NOK3W Curncy',
+        '0b/1m': 'NOK1M Curncy', '0b/2m': 'NOK2M Curncy', '0b/3m': 'NOK3M Curncy',
+        '0b/4m': 'NOK4M Curncy', '0b/5m': 'NOK5M Curncy', '0b/6m': 'NOK6M Curncy',
+        '0b/9m': 'NOK9M Curncy', '0b/12m': 'NOK12M Curncy', '0b/18m': 'NOK18M Curncy',
+        '0b/2y': 'NOK2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class NOK190T(NOKx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class NOK020L(NOKx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class NOK050N(NOKx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class NOK140x(NOKx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class NOK150x(NOKx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class NOK180x(NOKx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class NOK(NOKx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        NOK190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        NOK020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        NOK050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        NOK140x(history_start=datetime.date(2007, 8, 28)),
+        NOK150x(history_start=datetime.date(2007, 8, 28)),
+        NOK180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class NOKz(TimescaleMixin, NOKx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class NOK140z(NOKz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class NOK150z(NOKz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class NOK180z(NOKz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class NOKzz(NOKz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class SEKx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'SEK')
+    curve_calendar: FxCalendar = fx_calendar.SEK()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'SEKON Curncy', '-1b/0b': 'SEKTN Curncy', '0b': 'SEK Curncy', '0b/1b': 'SEKSN Curncy',
+        '0b/1w': 'SEK1W Curncy', '0b/2w': 'SEK2W Curncy', '0b/3w': 'SEK3W Curncy',
+        '0b/1m': 'SEK1M Curncy', '0b/2m': 'SEK2M Curncy', '0b/3m': 'SEK3M Curncy',
+        '0b/4m': 'SEK4M Curncy', '0b/5m': 'SEK5M Curncy', '0b/6m': 'SEK6M Curncy',
+        '0b/9m': 'SEK9M Curncy', '0b/12m': 'SEK12M Curncy', '0b/18m': 'SEK18M Curncy', '0b/2y': 'SEK2Y Curncy',
+        '0b/mar': 'SEKMAR Curncy', '0b/mb4': 'SEKMB4 Curncy', '0b/jun': 'SEKJUN Curncy', '0b/mb7': 'SEKMB7 Curncy',
+        '0b/sep': 'SEKSEP Curncy', '0b/mb10': 'SEKMB10 Curncy', '0b/dec': 'SEKDEC Curncy', '0b/mb1': 'SEKMB1 Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class SEK190T(SEKx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class SEK020L(SEKx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class SEK050N(SEKx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class SEK140x(SEKx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class SEK150x(SEKx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class SEK180x(SEKx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class SEK(SEKx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        SEK190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        SEK020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        SEK050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        SEK140x(history_start=datetime.date(2007, 8, 28)),
+        SEK150x(history_start=datetime.date(2007, 8, 28)),
+        SEK180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class SEKz(TimescaleMixin, SEKx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class SEK140z(SEKz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class SEK150z(SEKz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class SEK180z(SEKz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class SEKzz(SEKz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class JPYx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'JPY')
+    curve_calendar: FxCalendar = fx_calendar.JPY()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'JPYON Curncy', '-1b/0b': 'JPYTN Curncy', '0b': 'JPY Curncy', '0b/1b': 'JPYSN Curncy',
+        '0b/1w': 'JPY1W Curncy', '0b/2w': 'JPY2W Curncy', '0b/3w': 'JPY3W Curncy',
+        '0b/1m': 'JPY1M Curncy', '0b/2m': 'JPY2M Curncy', '0b/3m': 'JPY3M Curncy',
+        '0b/4m': 'JPY4M Curncy', '0b/5m': 'JPY5M Curncy', '0b/6m': 'JPY6M Curncy',
+        '0b/9m': 'JPY9M Curncy', '0b/12m': 'JPY12M Curncy', '0b/18m': 'JPY18M Curncy', '0b/2y': 'JPY2Y Curncy',
+        '0b/mar': 'JPYMAR Curncy', '0b/mb4': 'JPYMB4 Curncy', '0b/jun': 'JPYJUN Curncy', '0b/mb7': 'JPYMB7 Curncy',
+        '0b/sep': 'JPYSEP Curncy', '0b/mb10': 'JPYMB10 Curncy', '0b/dec': 'JPYDEC Curncy', '0b/mb1': 'JPYMB1 Curncy',
+    })
+    forward_point_size: float = 0.01
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=FxCost)
+
+
+@dataclass
+class JPY190T(JPYx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class JPY020L(JPYx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class JPY050N(JPYx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class JPY140x(JPYx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class JPY150x(JPYx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2007, 8, 27)
+
+
+@dataclass
+class JPY180x(JPYx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2007, 8, 28)
+
+
+@dataclass
+class JPY(JPYx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        JPY190T(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        JPY020L(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        JPY050N(reference_datetime=datetime.datetime(2007, 8, 27, 23)),
+        JPY140x(history_start=datetime.date(2007, 8, 28)),
+        JPY150x(history_start=datetime.date(2007, 8, 28)),
+        JPY180x(history_start=datetime.date(2007, 8, 28)),
+    ])
+
+
+@dataclass
+class JPYz(TimescaleMixin, JPYx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class JPY140z(JPYz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class JPY150z(JPYz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class JPY180z(JPYz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class JPYzz(JPYz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class SGDx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'SGD')
+    curve_calendar: FxCalendar = fx_calendar.SGD()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'SGDON Curncy', '-1b/0b': 'SGDTN Curncy', '0b': 'SGD Curncy', '0b/1b': 'SGDSN Curncy',
+        '0b/1w': 'SGD1W Curncy', '0b/2w': 'SGD2W Curncy', '0b/3w': 'SGD3W Curncy',
+        '0b/1m': 'SGD1M Curncy', '0b/2m': 'SGD2M Curncy', '0b/3m': 'SGD3M Curncy',
+        '0b/4m': 'SGD4M Curncy', '0b/5m': 'SGD5M Curncy', '0b/6m': 'SGD6M Curncy',
+        '0b/9m': 'SGD9M Curncy', '0b/12m': 'SGD12M Curncy', '0b/18m': 'SGD18M Curncy',
+        '0b/2y': 'SGD2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(0.15, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class SGD190T(SGDx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class SGD020L(SGDx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class SGD050N(SGDx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class SGD140x(SGDx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2010, 7, 20)
+
+
+@dataclass
+class SGD150x(SGDx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2010, 7, 20)
+
+
+@dataclass
+class SGD180x(SGDx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2010, 7, 21)
+
+
+@dataclass
+class SGD(SGDx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        SGD190T(reference_datetime=datetime.datetime(2010, 7, 20, 23)),
+        SGD020L(reference_datetime=datetime.datetime(2010, 7, 20, 23)),
+        SGD050N(reference_datetime=datetime.datetime(2010, 7, 20, 23)),
+        SGD140x(history_start=datetime.date(2010, 7, 21)),
+        SGD150x(history_start=datetime.date(2010, 7, 21)),
+        SGD180x(history_start=datetime.date(2010, 7, 21)),
+    ])
+
+
+@dataclass
+class SGDz(TimescaleMixin, SGDx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class SGD140z(SGDz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class SGD150z(SGDz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class SGD180z(SGDz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class SGDzz(SGDz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class THBx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'THB')
+    curve_calendar: FxCalendar = fx_calendar.THB()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'THBON Curncy', '-1b/0b': 'THBTN Curncy', '0b': 'THB Curncy', '0b/1b': 'THBSN Curncy',
+        '0b/1w': 'THB1W Curncy', '0b/2w': 'THB2W Curncy', '0b/3w': 'THB3W Curncy',
+        '0b/1m': 'THB1M Curncy', '0b/2m': 'THB2M Curncy', '0b/3m': 'THB3M Curncy',
+        '0b/4m': 'THB4M Curncy', '0b/5m': 'THB5M Curncy', '0b/6m': 'THB6M Curncy',
+        '0b/9m': 'THB9M Curncy', '0b/12m': 'THB12M Curncy',
+        '0b/2y': 'THB2Y Curncy',
+    })
+    forward_point_size: float = 0.01
+    live_spot_source: str = 'BGNT'  # BBG default source to REGN, override it to BGNT
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(7.48, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class THB190T(THBx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1995, 12, 13)
+
+
+@dataclass
+class THB020L(THBx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1995, 12, 13)
+
+
+@dataclass
+class THB050N(THBx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1995, 12, 13)
+
+
+@dataclass
+class THB140x(THBx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2009, 1, 28)
+
+
+@dataclass
+class THB150x(THBx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2009, 1, 29)
+
+
+@dataclass
+class THB180x(THBx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2009, 1, 29)
+
+
+@dataclass
+class THB(THBx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        THB190T(reference_datetime=datetime.datetime(2014, 4, 2, 23)),
+        THB020L(reference_datetime=datetime.datetime(2014, 4, 2, 23)),
+        THB050N(reference_datetime=datetime.datetime(2014, 4, 2, 23)),
+        THB140x(history_start=datetime.date(2014, 4, 3)),
+        THB150x(history_start=datetime.date(2014, 4, 3)),
+        THB180x(history_start=datetime.date(2014, 4, 3)),
+    ])
+
+
+@dataclass
+class THBz(TimescaleMixin, THBx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class THB140z(THBz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class THB150z(THBz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class THB180z(THBz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class THBzz(THBz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class HKDx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'HKD')
+    curve_calendar: FxCalendar = fx_calendar.HKD()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'HKDON Curncy', '-1b/0b': 'HKDTN Curncy', '0b': 'HKD Curncy', '0b/1b': 'HKDSN Curncy',
+        '0b/1w': 'HKD1W Curncy', '0b/2w': 'HKD2W Curncy', '0b/3w': 'HKD3W Curncy',
+        '0b/1m': 'HKD1M Curncy', '0b/2m': 'HKD2M Curncy', '0b/3m': 'HKD3M Curncy',
+        '0b/4m': 'HKD4M Curncy', '0b/5m': 'HKD5M Curncy', '0b/6m': 'HKD6M Curncy',
+        '0b/9m': 'HKD9M Curncy', '0b/12m': 'HKD12M Curncy', '0b/18m': 'HKD18M Curncy',
+        '0b/2y': 'HKD2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(0.15, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class HKD190T(HKDx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class HKD020L(HKDx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class HKD050N(HKDx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class HKD140x(HKDx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class HKD150x(HKDx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2012, 4, 10)
+
+
+@dataclass
+class HKD180x(HKDx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2012, 8, 1)
+
+
+@dataclass
+class HKD(HKDx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        HKD190T(reference_datetime=datetime.datetime(2015, 2, 8, 23)),
+        HKD020L(reference_datetime=datetime.datetime(2015, 2, 8, 23)),
+        HKD050N(reference_datetime=datetime.datetime(2015, 2, 8, 23)),
+        HKD140x(history_start=datetime.date(2015, 2, 9)),
+        HKD150x(history_start=datetime.date(2015, 2, 9)),
+        HKD180x(history_start=datetime.date(2015, 2, 9)),
+    ])
+
+
+@dataclass
+class HKDz(TimescaleMixin, HKDx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class HKD140z(HKDz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class HKD150z(HKDz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class HKD180z(HKDz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class HKDzz(HKDz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class CNHx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'CNH')
+    curve_calendar: FxCalendar = fx_calendar.CNH()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'CNHON Curncy', '-1b/0b': 'CNHTN Curncy', '0b': 'CNH Curncy',
+        '0b/1w': 'CNH1W Curncy', '0b/2w': 'CNH2W Curncy',
+        '0b/1m': 'CNH1M Curncy', '0b/2m': 'CNH2M Curncy', '0b/3m': 'CNH3M Curncy',
+        '0b/6m': 'CNH6M Curncy', '0b/9m': 'CNH9M Curncy', '0b/12m': 'CNH12M Curncy',
+        '0b/2y': 'CNH2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(1.57, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class CNH190T(CNHx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2010, 8, 26)
+
+
+@dataclass
+class CNH020L(CNHx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2010, 8, 26)
+
+
+@dataclass
+class CNH050N(CNHx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2010, 8, 26)
+
+
+@dataclass
+class CNH140x(CNHx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2014, 3, 24)
+
+
+@dataclass
+class CNH150x(CNHx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2014, 3, 24)
+
+
+@dataclass
+class CNH180x(CNHx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2014, 3, 25)
+
+
+@dataclass
+class CNH(CNHx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        CNH190T(reference_datetime=datetime.datetime(2014, 3, 24, 23)),
+        CNH020L(reference_datetime=datetime.datetime(2014, 3, 24, 23)),
+        CNH050N(reference_datetime=datetime.datetime(2014, 3, 24, 23)),
+        CNH140x(history_start=datetime.date(2014, 3, 25)),
+        CNH150x(history_start=datetime.date(2014, 3, 25)),
+        CNH180x(history_start=datetime.date(2014, 3, 25)),
+    ])
+
+
+@dataclass
+class CNHz(TimescaleMixin, CNHx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CNH140z(CNHz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class CNH150z(CNHz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class CNH180z(CNHz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CNHzz(CNHz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class TWDx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'TWD')
+    curve_calendar: FxCalendar = fx_calendar.TWD()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '1m': 'NTN+1M Curncy',
+        '0b/1w': 'NTN1W Curncy', '0b/1m': 'NTN1M Curncy', '0b/2m': 'NTN2M Curncy', '0b/3m': 'NTN3M Curncy',
+        '0b/6m': 'NTN6M Curncy', '0b/9m': 'NTN9M Curncy', '0b/12m': 'NTN12M Curncy', '0b/2y': 'NTN2Y Curncy',
+    })
+    fixing_ticker: str = 'TRY11 Index'
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: NDFCost(
+        bid_ask=Amount(2.33, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class TWD190T(TWDx):
+    history_data_source: str = 'BGNT'
+    # jchi@202107
+    # some super strange BPipe behaviour is observed when history_start is set to 1999-01-19 data will be missing in
+    # 'NTN2Y BGNT Curncy' @ 'ASK' and 'LAST_PRICE' between 1999-03-01 and 1999-08-18. Data is re-appearing when
+    # history_start is set to 1999-03-02. This behaviour is only observed in BGNT but not BGNL/BGN source.
+    history_start: datetime.date = datetime.date(1999, 3, 2)
+
+
+@dataclass
+class TWD020L(TWDx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1999, 1, 19)
+
+
+@dataclass
+class TWD050N(TWDx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1999, 1, 19)
+
+
+@dataclass
+class TWD140x(TWDx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2017, 11, 10)
+
+
+@dataclass
+class TWD150x(TWDx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2017, 11, 10)
+
+
+@dataclass
+class TWD180x(TWDx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 11, 13)
+
+
+@dataclass
+class TWD(TWDx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        TWD190T(reference_datetime=datetime.datetime(2021, 2, 3, 23)),
+        TWD020L(reference_datetime=datetime.datetime(2021, 2, 3, 23)),
+        TWD050N(reference_datetime=datetime.datetime(2021, 2, 3, 23)),
+        TWD140x(history_start=datetime.date(2021, 2, 4)),
+        TWD150x(history_start=datetime.date(2021, 2, 4)),
+        TWD180x(history_start=datetime.date(2021, 2, 4)),
+    ])
+
+
+@dataclass
+class TWDz(TimescaleRawMixin, TWDx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class TWD140z(TWDz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class TWD150z(TWDz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class TWD180z(TWDz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class TWDzz(TWDz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class CNYx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'CNY')
+    curve_calendar: FxCalendar = fx_calendar.CNY()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b': 'CNY Curncy', '1b': 'CCN+1D Curncy', '1w': 'CCN+1W Curncy', '2w': 'CCN+2W Curncy',
+        '1m': 'CCN+1M Curncy', '2m': 'CCN+2M Curncy', '3m': 'CCN+3M Curncy',
+        '6m': 'CCN+6M Curncy', '9m': 'CCN+9M Curncy', '12m': 'CCN+12M Curncy',
+        '18m': 'CCN+18M Curncy', '2y': 'CCN+2Y Curncy',
+    })
+    fixing_ticker: str = 'CNYMUSD Index'
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=NDFCost)
+
+
+@dataclass
+class CNY190T(CNYx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class CNY020L(CNYx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class CNY050N(CNYx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class CNY140x(CNYx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class CNY150x(CNYx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class CNY180x(CNYx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 5, 3)
+
+
+@dataclass
+class CNY(CNYx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        CNY190T(reference_datetime=datetime.datetime(2017, 5, 2, 23)),
+        CNY020L(reference_datetime=datetime.datetime(2015, 8, 12, 23)),
+        CNY050N(reference_datetime=datetime.datetime(2015, 8, 12, 23)),
+        CNY140x(history_start=datetime.date(2015, 8, 13)),
+        CNY150x(history_start=datetime.date(2015, 8, 13)),
+        CNY180x(history_start=datetime.date(2017, 5, 3)),
+    ])
+
+
+@dataclass
+class CNYz(TimescaleRawMixin, CNYx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CNY140z(CNYz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class CNY150z(CNYz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class CNY180z(CNYz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CNYzz(CNYz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class KRWx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'KRW')
+    curve_calendar: FxCalendar = fx_calendar.KRW()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b/1m': 'KWN1M Curncy',
+        '1w': 'KWN+1W Curncy', '1m': 'KWN+1M Curncy', '2m': 'KWN+2M Curncy', '3m': 'KWN+3M Curncy',
+        '6m': 'KWN+6M Curncy', '9m': 'KWN+9M Curncy', '12m': 'KWN+12M Curncy', '2y': 'KWN+2Y Curncy',
+    })
+    fixing_ticker: str = 'KOBRUSD Index'
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: NDFCost(
+        bid_ask=Amount(2.17, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class KRW190T(KRWx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class KRW020L(KRWx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class KRW050N(KRWx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class KRW140x(KRWx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class KRW150x(KRWx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2017, 5, 2)
+
+
+@dataclass
+class KRW180x(KRWx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 5, 2)
+
+
+@dataclass
+class KRW(KRWx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        KRW190T(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        KRW020L(reference_datetime=datetime.datetime(2011, 12, 4, 23)),
+        KRW050N(reference_datetime=datetime.datetime(2011, 12, 4, 23)),
+        KRW140x(history_start=datetime.date(2011, 12, 5)),
+        KRW150x(history_start=datetime.date(2017, 5, 2)),
+        KRW180x(history_start=datetime.date(2017, 5, 2)),
+    ])
+
+
+@dataclass
+class KRWz(TimescaleRawMixin, KRWx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class KRW140z(KRWz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class KRW150z(KRWz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class KRW180z(KRWz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class KRWzz(KRWz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class IDRx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'IDR')
+    curve_calendar: FxCalendar = fx_calendar.IDR()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b/1m': 'IHN1M Curncy',
+        '1w': 'IHN+1W Curncy', '1m': 'IHN+1M Curncy', '2m': 'IHN+2M Curncy', '3m': 'IHN+3M Curncy',
+        '6m': 'IHN+6M Curncy', '9m': 'IHN+9M Curncy', '12m': 'IHN+12M Curncy', '2y': 'IHN+2Y Curncy',
+    })
+    fixing_ticker: str = 'JISDOR Index'
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: NDFCost(
+        bid_ask=Amount(5.11, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class IDR190T(IDRx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2001, 3, 13)
+
+
+@dataclass
+class IDR020L(IDRx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2001, 3, 13)
+
+
+@dataclass
+class IDR050N(IDRx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2001, 3, 13)
+
+
+@dataclass
+class IDR140x(IDRx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2013, 5, 16)
+
+
+@dataclass
+class IDR150x(IDRx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 12, 1)
+
+
+@dataclass
+class IDR180x(IDRx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 5, 2)
+
+
+@dataclass
+class IDR(IDRx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        IDR190T(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        IDR020L(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        IDR050N(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        IDR140x(history_start=datetime.date(2017, 5, 2)),
+        IDR150x(history_start=datetime.date(2017, 5, 2)),
+        IDR180x(history_start=datetime.date(2017, 5, 2)),
+    ])
+
+
+@dataclass
+class IDRz(TimescaleRawMixin, IDRx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class IDR140z(IDRz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class IDR150z(IDRz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class IDR180z(IDRz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class IDRzz(IDRz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class PHPx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'PHP')
+    curve_calendar: FxCalendar = fx_calendar.PHP()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b/1m': 'PPN1M Curncy',
+        '1w': 'PPN+1W Curncy', '1m': 'PPN+1M Curncy', '2m': 'PPN+2M Curncy', '3m': 'PPN+3M Curncy',
+        '6m': 'PPN+6M Curncy', '9m': 'PPN+9M Curncy', '12m': 'PPN+12M Curncy', '2y': 'PPN+2Y Curncy',
+    })
+    fixing_ticker: str = 'PHFRRATE Index'
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: NDFCost(
+        bid_ask=Amount(5.5, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class PHP190T(PHPx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2001, 3, 13)
+
+
+@dataclass
+class PHP020L(PHPx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2001, 3, 13)
+
+
+@dataclass
+class PHP050N(PHPx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2001, 3, 13)
+
+
+@dataclass
+class PHP140x(PHPx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 12, 1)
+
+
+@dataclass
+class PHP150x(PHPx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 12, 1)
+
+
+@dataclass
+class PHP180x(PHPx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 5, 2)
+
+
+@dataclass
+class PHP(PHPx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        PHP190T(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        PHP020L(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        PHP050N(reference_datetime=datetime.datetime(2017, 5, 1, 23)),
+        PHP140x(history_start=datetime.date(2017, 5, 2)),
+        PHP150x(history_start=datetime.date(2017, 5, 2)),
+        PHP180x(history_start=datetime.date(2017, 5, 2)),
+    ])
+
+
+@dataclass
+class PHPz(TimescaleRawMixin, PHPx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class PHP140z(PHPz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class PHP150z(PHPz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class PHP180z(PHPz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class PHPzz(PHPz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class MYRx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'MYR')
+    curve_calendar: FxCalendar = fx_calendar.MYR()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b': 'MYR Curncy',
+        '1w': 'MRN+1W Curncy', '1m': 'MRN+1M Curncy', '2m': 'MRN+2M Curncy', '3m': 'MRN+3M Curncy',
+        '6m': 'MRN+6M Curncy', '9m': 'MRN+9M Curncy', '12m': 'MRN+12M Curncy',
+    })
+    # fixing_ticker: str = 'MYR BNMK Curncy'  # model confused by it with spot ticker
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=NDFCost)
+
+
+@dataclass
+class MYR190T(MYRx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2004, 9, 14)
+
+
+@dataclass
+class MYR020L(MYRx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2004, 9, 14)
+
+
+@dataclass
+class MYR050N(MYRx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2004, 9, 14)
+
+
+@dataclass
+class MYR140x(MYRx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class MYR150x(MYRx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class MYR180x(MYRx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 5, 5)
+
+
+@dataclass
+class MYR(MYRx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        MYR190T(reference_datetime=datetime.datetime(2017, 5, 4, 23)),
+        MYR020L(reference_datetime=datetime.datetime(2017, 5, 4, 23)),
+        MYR050N(reference_datetime=datetime.datetime(2017, 5, 4, 23)),
+        MYR140x(history_start=datetime.date(2017, 5, 5)),
+        MYR150x(history_start=datetime.date(2017, 5, 5)),
+        MYR180x(history_start=datetime.date(2017, 5, 5)),
+    ])
+
+
+@dataclass
+class MYRz(TimescaleRawMixin, MYRx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class MYR140z(MYRz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class MYR150z(MYRz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class MYR180z(MYRz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class MYRzz(MYRz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class INRx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'INR')
+    curve_calendar: FxCalendar = fx_calendar.INR()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b/1m': 'IRN1M Curncy',
+        '1w': 'IRN+1W Curncy', '1m': 'IRN+1M Curncy', '2m': 'IRN+2M Curncy', '3m': 'IRN+3M Curncy',
+        '6m': 'IRN+6M Curncy', '9m': 'IRN+9M Curncy', '12m': 'IRN+12M Curncy', '2y': 'IRN+2Y Curncy',
+    })
+    fixing_ticker: str = 'INRRATE Index'
+    forward_point_size: float = 0.01
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: NDFCost(
+        bid_ask=Amount(1.88, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class INR190T(INRx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class INR020L(INRx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class INR050N(INRx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 12, 11)
+
+
+@dataclass
+class INR140x(INRx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class INR150x(INRx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 12, 5)
+
+
+@dataclass
+class INR180x(INRx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2011, 12, 8)
+
+
+@dataclass
+class INR(INRx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        INR190T(reference_datetime=datetime.datetime(2011, 12, 7, 23)),
+        INR020L(reference_datetime=datetime.datetime(2011, 12, 7, 23)),
+        INR050N(reference_datetime=datetime.datetime(2011, 12, 7, 23)),
+        INR140x(history_start=datetime.date(2011, 12, 8)),
+        INR150x(history_start=datetime.date(2011, 12, 8)),
+        INR180x(history_start=datetime.date(2011, 12, 8)),
+    ])
+
+
+@dataclass
+class INRz(TimescaleRawMixin, INRx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class INR140z(INRz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class INR150z(INRz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class INR180z(INRz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class INRzz(INRz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class EGPx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'EGP')
+    curve_calendar: FxCalendar = fx_calendar.EGP()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '0b': 'EGP Curncy',
+        '1w': 'EPN+1W Curncy', '1m': 'EPN+1M Curncy', '2m': 'EPN+2M Curncy', '3m': 'EPN+3M Curncy',
+        '6m': 'EPN+6M Curncy', '9m': 'EPN+9M Curncy', '12m': 'EPN+12M Curncy', '2y': 'EPN+2Y Curncy',
+    })
+    fixing_ticker: str = 'CBER12PM Index'
+    forward_point_size: float = 1.
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=NDFCost)
+    market_data_provider: MarketDataProvider = BConMarketDataProvider()
+
+
+@dataclass
+class EGP190T(EGPx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2007, 7, 31)
+
+
+@dataclass
+class EGP020L(EGPx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2007, 7, 31)
+
+
+@dataclass
+class EGP050N(EGPx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2007, 7, 31)
+
+
+@dataclass
+class EGP140x(EGPx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2017, 5, 11)
+
+
+@dataclass
+class EGP150x(EGPx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2017, 5, 12)
+
+
+@dataclass
+class EGP180x(EGPx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2017, 5, 11)
+
+
+@dataclass
+class EGP(EGPx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        EGP190T(reference_datetime=datetime.datetime(2017, 5, 13, 23)),
+        EGP020L(reference_datetime=datetime.datetime(2017, 5, 13, 23)),
+        EGP050N(reference_datetime=datetime.datetime(2017, 5, 13, 23)),
+        EGP140x(history_start=datetime.date(2017, 5, 14)),
+        EGP150x(history_start=datetime.date(2017, 5, 14)),
+        EGP180x(history_start=datetime.date(2017, 5, 14)),
+    ])
+
+
+@dataclass
+class TRYx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'TRY')
+    curve_calendar: FxCalendar = fx_calendar.TRY()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-1b/0b': 'TRYON Curncy', '0b': 'TRY Curncy', '0b/1b': 'TRYTN Curncy',
+        '0b/1w': 'TRY1W Curncy', '0b/2w': 'TRY2W Curncy', '0b/3w': 'TRY3W Curncy',
+        '0b/1m': 'TRY1M Curncy', '0b/2m': 'TRY2M Curncy', '0b/3m': 'TRY3M Curncy',
+        '0b/4m': 'TRY4M Curncy', '0b/5m': 'TRY5M Curncy', '0b/6m': 'TRY6M Curncy',
+        '0b/9m': 'TRY9M Curncy', '0b/12m': 'TRY12M Curncy', '0b/18m': 'TRY18M Curncy',
+        '0b/2y': 'TRY2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(9.95, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class TRY190T(TRYx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 11, 25)
+
+
+@dataclass
+class TRY020L(TRYx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 11, 25)
+
+
+@dataclass
+class TRY050N(TRYx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 11, 25)
+
+
+@dataclass
+class TRY140x(TRYx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2009, 6, 9)
+
+
+@dataclass
+class TRY150x(TRYx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2009, 6, 8)
+
+
+@dataclass
+class TRY180x(TRYx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2009, 6, 9)
+
+
+@dataclass
+class TRY(TRYx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        TRY190T(reference_datetime=datetime.datetime(2009, 6, 8, 23)),
+        TRY020L(reference_datetime=datetime.datetime(2009, 6, 8, 23)),
+        TRY050N(reference_datetime=datetime.datetime(2009, 6, 8, 23)),
+        TRY140x(history_start=datetime.date(2009, 6, 9)),
+        TRY150x(history_start=datetime.date(2009, 6, 9)),
+        TRY180x(history_start=datetime.date(2009, 6, 9)),
+    ])
+
+
+@dataclass
+class TRYz(TimescaleMixin, TRYx):
+    history_data_source: str = 'H180'
+    # jchi@202108
+    # for the sake of matching SSL's TRI, somehow SSL's TRY TRI starts from 2010-01-04 as opposed the other TRIs
+    # starting from 2010-01-01
+    history_start: datetime.date = datetime.date(2010, 1, 4)
+
+
+@dataclass
+class TRY140z(TRYz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class TRY150z(TRYz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class TRY180z(TRYz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class TRYzz(TRYz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class ZARx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'ZAR')
+    curve_calendar: FxCalendar = fx_calendar.ZAR()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'ZARON Curncy', '-1b/0b': 'ZARTN Curncy', '0b': 'ZAR Curncy', '0b/1b': 'ZARSN Curncy',
+        '0b/1w': 'ZAR1W Curncy', '0b/2w': 'ZAR2W Curncy', '0b/3w': 'ZAR3W Curncy',
+        '0b/1m': 'ZAR1M Curncy', '0b/2m': 'ZAR2M Curncy', '0b/3m': 'ZAR3M Curncy',
+        '0b/4m': 'ZAR4M Curncy', '0b/5m': 'ZAR5M Curncy', '0b/6m': 'ZAR6M Curncy',
+        '0b/9m': 'ZAR9M Curncy', '0b/12m': 'ZAR12M Curncy',
+        '0b/2y': 'ZAR2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(9.31, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class ZAR190T(ZARx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class ZAR020L(ZARx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class ZAR050N(ZARx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1988, 12, 29)
+
+
+@dataclass
+class ZAR140x(ZARx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 2, 24)
+
+
+@dataclass
+class ZAR150x(ZARx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 2, 24)
+
+
+@dataclass
+class ZAR180x(ZARx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2011, 2, 25)
+
+
+@dataclass
+class ZAR(ZARx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        ZAR190T(reference_datetime=datetime.datetime(2011, 2, 24, 23)),
+        ZAR020L(reference_datetime=datetime.datetime(2011, 2, 24, 23)),
+        ZAR050N(reference_datetime=datetime.datetime(2011, 2, 24, 23)),
+        ZAR140x(history_start=datetime.date(2011, 2, 25)),
+        ZAR150x(history_start=datetime.date(2011, 2, 25)),
+        ZAR180x(history_start=datetime.date(2011, 2, 25)),
+    ])
+
+
+@dataclass
+class ZARz(TimescaleMixin, ZARx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class ZAR140z(ZARz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class ZAR150z(ZARz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class ZAR180z(ZARz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class ZARzz(ZARz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class RUBx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'RUB')
+    curve_calendar: FxCalendar = fx_calendar.RUB()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-1b/0b': 'RUBON Curncy', '0b': 'RUB Curncy', '0b/1b': 'RUBTN Curncy',
+        '0b/1w': 'RUB1W Curncy', '0b/2w': 'RUB2W Curncy',
+        '0b/1m': 'RUB1M Curncy', '0b/2m': 'RUB2M Curncy', '0b/3m': 'RUB3M Curncy',
+        '0b/4m': 'RUB4M Curncy', '0b/5m': 'RUB5M Curncy', '0b/6m': 'RUB6M Curncy',
+        '0b/9m': 'RUB9M Curncy', '0b/12m': 'RUB12M Curncy', '0b/18m': 'RUB18M Curncy',
+        '0b/2y': 'RUB2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    live_spot_source: str = 'BGNT'  # BBG default source to REGN, override it to BGNT
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(3.86, Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class RUB190T(RUBx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2001, 8, 9)
+
+
+@dataclass
+class RUB020L(RUBx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2001, 8, 9)
+
+
+@dataclass
+class RUB050N(RUBx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2001, 8, 9)
+
+
+@dataclass
+class RUB140x(RUBx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2013, 8, 21)
+
+
+@dataclass
+class RUB150x(RUBx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2013, 8, 21)
+
+
+@dataclass
+class RUB180x(RUBx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2013, 8, 22)
+
+
+@dataclass
+class RUB(RUBx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        RUB190T(reference_datetime=datetime.datetime(2013, 8, 21, 23)),
+        RUB020L(reference_datetime=datetime.datetime(2013, 8, 21, 23)),
+        RUB050N(reference_datetime=datetime.datetime(2013, 8, 21, 23)),
+        RUB140x(history_start=datetime.date(2013, 8, 22)),
+        RUB150x(history_start=datetime.date(2013, 8, 22)),
+        RUB180x(history_start=datetime.date(2013, 8, 22)),
+    ])
+
+
+@dataclass
+class RUBz(TimescaleRawMixin, RUBx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class RUB140z(RUBz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class RUB150z(RUBz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class RUB180z(RUBz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class RUBzz(RUBz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class ILSx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'ILS')
+    curve_calendar: FxCalendar = fx_calendar.ILS()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'ILSON Curncy', '-1b/0b': 'ILSTN Curncy', '0b': 'ILS Curncy', '0b/1b': 'ILSSN Curncy',
+        '0b/1w': 'ILS1W Curncy', '0b/2w': 'ILS2W Curncy', '0b/3w': 'ILS3W Curncy',
+        '0b/1m': 'ILS1M Curncy', '0b/2m': 'ILS2M Curncy', '0b/3m': 'ILS3M Curncy',
+        '0b/6m': 'ILS6M Curncy', '0b/9m': 'ILS9M Curncy', '0b/11m': 'ILS11M Curncy',
+        '0b/12m': 'ILS12M Curncy', '0b/2y': 'ILS2Y Curncy', '0b/3y': 'ILS3Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(4., Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class ILS190T(ILSx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 7, 21)
+
+
+@dataclass
+class ILS020L(ILSx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 7, 21)
+
+
+@dataclass
+class ILS050N(ILSx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 7, 21)
+
+
+@dataclass
+class ILS140x(ILSx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2014, 3, 24)
+
+
+@dataclass
+class ILS150x(ILSx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2014, 3, 24)
+
+
+@dataclass
+class ILS180x(ILSx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2014, 3, 24)
+
+
+@dataclass
+class ILS(ILSx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        ILS190T(reference_datetime=datetime.datetime(2014, 3, 23, 23)),
+        ILS020L(reference_datetime=datetime.datetime(2014, 3, 23, 23)),
+        ILS050N(reference_datetime=datetime.datetime(2014, 3, 23, 23)),
+        ILS140x(history_start=datetime.date(2014, 3, 24)),
+        ILS150x(history_start=datetime.date(2014, 3, 24)),
+        ILS180x(history_start=datetime.date(2014, 3, 24)),
+    ])
+
+
+@dataclass
+class ILSz(TimescaleRawMixin, ILSx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class ILS140z(ILSz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class ILS150z(ILSz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class ILS180z(ILSz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class ILSzz(ILSz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class PLNx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'PLN')
+    curve_calendar: FxCalendar = fx_calendar.PLN()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_365F
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'PLNON Curncy', '-1b/0b': 'PLNTN Curncy', '0b': 'PLN Curncy', '0b/1b': 'PLNSN Curncy',
+        '0b/1w': 'PLN1W Curncy', '0b/2w': 'PLN2W Curncy', '0b/3w': 'PLN3W Curncy',
+        '0b/1m': 'PLN1M Curncy', '0b/2m': 'PLN2M Curncy', '0b/3m': 'PLN3M Curncy',
+        '0b/4m': 'PLN4M Curncy', '0b/5m': 'PLN5M Curncy', '0b/6m': 'PLN6M Curncy',
+        '0b/9m': 'PLN9M Curncy', '0b/11m': 'PLN11M Curncy', '0b/12m': 'PLN12M Curncy',
+        '0b/2y': 'PLN2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(4., Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class PLN190T(PLNx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1998, 7, 17)
+
+
+@dataclass
+class PLN020L(PLNx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1998, 7, 17)
+
+
+@dataclass
+class PLN050N(PLNx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1998, 7, 17)
+
+
+@dataclass
+class PLN140x(PLNx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2011, 12, 1)
+
+
+@dataclass
+class PLN150x(PLNx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2011, 12, 1)
+
+
+@dataclass
+class PLN180x(PLNx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2011, 12, 1)
+
+
+@dataclass
+class PLN(PLNx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        PLN190T(reference_datetime=datetime.datetime(2011, 11, 30, 23)),
+        PLN020L(reference_datetime=datetime.datetime(2011, 11, 30, 23)),
+        PLN050N(reference_datetime=datetime.datetime(2011, 11, 30, 23)),
+        PLN140x(history_start=datetime.date(2011, 12, 1)),
+        PLN150x(history_start=datetime.date(2011, 12, 1)),
+        PLN180x(history_start=datetime.date(2011, 12, 1)),
+    ])
+
+
+@dataclass
+class PLNz(TimescaleRawMixin, PLNx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class PLN140z(PLNz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class PLN150z(PLNz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class PLN180z(PLNz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class PLNzz(PLNz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class HUFx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'HUF')
+    curve_calendar: FxCalendar = fx_calendar.HUF()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'HUFON Curncy', '-1b/0b': 'HUFTN Curncy', '0b': 'HUF Curncy', '0b/1b': 'HUFSN Curncy',
+        '0b/1w': 'HUF1W Curncy', '0b/2w': 'HUF2W Curncy',
+        '0b/1m': 'HUF1M Curncy', '0b/2m': 'HUF2M Curncy', '0b/3m': 'HUF3M Curncy',
+        '0b/4m': 'HUF4M Curncy', '0b/5m': 'HUF5M Curncy', '0b/6m': 'HUF6M Curncy',
+        '0b/7m': 'HUF7M Curncy', '0b/8m': 'HUF8M Curncy', '0b/9m': 'HUF9M Curncy',
+        '0b/10m': 'HUF10M Curncy', '0b/11m': 'HUF11M Curncy', '0b/12m': 'HUF12M Curncy',
+        '0b/21m': 'HUF21M Curncy', '0b/2y': 'HUF2Y Curncy', '0b/3y': 'HUF3Y Curncy',
+        '0b/4y': 'HUF4Y Curncy', '0b/5y': 'HUF5Y Curncy',
+    })
+    forward_point_size: float = 0.01
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(4., Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class HUF190T(HUFx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(2001, 1, 26)
+
+
+@dataclass
+class HUF020L(HUFx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(2001, 1, 26)
+
+
+@dataclass
+class HUF050N(HUFx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(2001, 1, 26)
+
+
+@dataclass
+class HUF140x(HUFx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class HUF150x(HUFx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class HUF180x(HUFx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class HUF(HUFx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        HUF190T(reference_datetime=datetime.datetime(2012, 7, 30, 23)),
+        HUF020L(reference_datetime=datetime.datetime(2012, 7, 30, 23)),
+        HUF050N(reference_datetime=datetime.datetime(2012, 7, 30, 23)),
+        HUF140x(history_start=datetime.date(2012, 7, 31)),
+        HUF150x(history_start=datetime.date(2012, 7, 31)),
+        HUF180x(history_start=datetime.date(2012, 7, 31)),
+    ])
+
+
+@dataclass
+class HUFz(TimescaleRawMixin, HUFx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class HUF140z(HUFz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class HUF150z(HUFz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class HUF180z(HUFz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class HUFzz(HUFz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class CZKx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'CZK')
+    curve_calendar: FxCalendar = fx_calendar.CZK()
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'CZKON Curncy', '-1b/0b': 'CZKTN Curncy', '0b': 'CZK Curncy', '0b/1b': 'CZKSN Curncy',
+        '0b/1w': 'CZK1W Curncy', '0b/2w': 'CZK2W Curncy', '0b/3w': 'CZK3W Curncy',
+        '0b/1m': 'CZK1M Curncy', '0b/2m': 'CZK2M Curncy', '0b/3m': 'CZK3M Curncy',
+        '0b/4m': 'CZK4M Curncy', '0b/5m': 'CZK5M Curncy', '0b/6m': 'CZK6M Curncy',
+        '0b/7m': 'CZK7M Curncy', '0b/8m': 'CZK8M Curncy', '0b/9m': 'CZK9M Curncy',
+        '0b/11m': 'CZK11M Curncy', '0b/12m': 'CZK12M Curncy', '0b/2y': 'CZK2Y Curncy',
+    })
+    forward_point_size: float = 0.001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(4., Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class CZK190T(CZKx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1997, 4, 17)
+
+
+@dataclass
+class CZK020L(CZKx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1997, 4, 17)
+
+
+@dataclass
+class CZK050N(CZKx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1997, 4, 17)
+
+
+@dataclass
+class CZK140x(CZKx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class CZK150x(CZKx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class CZK180x(CZKx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2012, 7, 31)
+
+
+@dataclass
+class CZK(CZKx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        CZK190T(reference_datetime=datetime.datetime(2012, 7, 30, 23)),
+        CZK020L(reference_datetime=datetime.datetime(2012, 7, 30, 23)),
+        CZK050N(reference_datetime=datetime.datetime(2012, 7, 30, 23)),
+        CZK140x(history_start=datetime.date(2012, 7, 31)),
+        CZK150x(history_start=datetime.date(2012, 7, 31)),
+        CZK180x(history_start=datetime.date(2012, 7, 31)),
+    ])
+
+
+@dataclass
+class CZKz(TimescaleRawMixin, CZKx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CZK140z(CZKz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class CZK150z(CZKz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class CZK180z(CZKz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class CZKzz(CZKz):
+    history_data_source: str = 'ALL'
+
+
+@dataclass
+class MXNx(Forex):
+    curve_currency: Tuple[str, str] = ('USD', 'MXN')
+    curve_calendar: FxCalendar = fx_calendar.MXN()
+    # jchi@2022-03-03
+    # use ACT/360 instead of 28/360 to avoid pricing issue for MXN
+    day_count_conv: DayCountConvention = DayCountConvention.ACTUAL_360
+    quote_tickers: Dict[str, str] = field(default_factory=lambda: {
+        '-2b/-1b': 'MXNON Curncy', '-1b/0b': 'MXNTN Curncy', '0b': 'MXN Curncy', '0b/1b': 'MXNSN Curncy',
+        '0b/1w': 'MXN1W Curncy', '0b/2w': 'MXN2W Curncy', '0b/3w': 'MXN3W Curncy',
+        '0b/1m': 'MXN1M Curncy', '0b/2m': 'MXN2M Curncy', '0b/3m': 'MXN3M Curncy',
+        '0b/4m': 'MXN4M Curncy', '0b/5m': 'MXN5M Curncy', '0b/6m': 'MXN6M Curncy',
+        '0b/9m': 'MXN9M Curncy', '0b/12m': 'MXN12M Curncy',
+        '0b/2y': 'MXN2Y Curncy',
+    })
+    forward_point_size: float = 0.0001
+    history_data_source: str = 'T190'
+    transaction_cost: TransactionCost = field(default_factory=lambda: FxCost(
+        bid_ask=Amount(3., Unit.BASIS_POINTS),
+    ))
+
+
+@dataclass
+class MXN190T(MXNx):
+    history_data_source: str = 'BGNT'
+    history_start: datetime.date = datetime.date(1997, 11, 3)
+
+
+@dataclass
+class MXN020L(MXNx):
+    history_data_source: str = 'BGNL'
+    history_start: datetime.date = datetime.date(1997, 11, 3)
+
+
+@dataclass
+class MXN050N(MXNx):
+    history_data_source: str = 'BGN'
+    history_start: datetime.date = datetime.date(1997, 11, 3)
+
+
+@dataclass
+class MXN140x(MXNx):
+    history_data_source: str = 'T150'
+    history_start: datetime.date = datetime.date(2013, 1, 30)
+
+
+@dataclass
+class MXN150x(MXNx):
+    history_data_source: str = 'T160'
+    history_start: datetime.date = datetime.date(2013, 1, 30)
+
+
+@dataclass
+class MXN180x(MXNx):
+    history_data_source: str = 'T190'
+    history_start: datetime.date = datetime.date(2013, 1, 30)
+
+
+@dataclass
+class MXN(MXNx, ForexChain):
+    history_chain: Sequence[Forex] = field(default_factory=lambda: [
+        MXN190T(reference_datetime=datetime.datetime(2013, 1, 29, 23)),
+        MXN020L(reference_datetime=datetime.datetime(2013, 1, 29, 23)),
+        MXN050N(reference_datetime=datetime.datetime(2013, 1, 29, 23)),
+        MXN140x(history_start=datetime.date(2013, 1, 30)),
+        MXN150x(history_start=datetime.date(2013, 1, 30)),
+        MXN180x(history_start=datetime.date(2013, 1, 30)),
+    ])
+
+
+@dataclass
+class MXNz(TimescaleRawMixin, MXNx):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class MXN140z(MXNz):
+    history_data_source: str = 'H140'
+
+
+@dataclass
+class MXN150z(MXNz):
+    history_data_source: str = 'H150'
+
+
+@dataclass
+class MXN180z(MXNz):
+    history_data_source: str = 'H180'
+
+
+@dataclass
+class MXNzz(MXNz):
+    history_data_source: str = 'ALL'

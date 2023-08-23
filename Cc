@@ -1,0 +1,120 @@
+import datetime
+from typing import List, Iterable, Dict, Tuple, Set
+
+import pandas
+
+from sylo.db.timescale.marketdata_cds import MarketdataCDS, CDSTicker, CDSTenor
+from sylo.db.timescale.uat.ssl_cds import SSLCds
+from .mdp import MarketDataProvider
+
+# noinspection PyProtectedMember
+BBG_TO_DB: Dict[str, Tuple[CDSTicker, CDSTenor]] = {
+    # G10
+    'GERMAN CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Germany, CDSTenor._5Y),
+    'UK CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.UnitedKingdom, CDSTenor._5Y),
+    'AUSTLA CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Australia, CDSTenor._5Y),
+    'NZ CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.NewZealand, CDSTenor._5Y),
+    'CANPAC CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Canada, CDSTenor._5Y),
+    'SWISS CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Switzerland, CDSTenor._5Y),
+    'NORWAY CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Norway, CDSTenor._5Y),
+    'SWED CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Sweden, CDSTenor._5Y),
+    'JGB CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Japan, CDSTenor._5Y),
+    # Asia EM
+    'THAI CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Thailand, CDSTenor._5Y),
+    'HONGK CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.HongKong, CDSTenor._5Y),
+    'CHINAGOV CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.China, CDSTenor._5Y),
+    'KOREA CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Korea, CDSTenor._5Y),
+    'PHILIP CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Philippines, CDSTenor._5Y),
+    'INDON CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Indonesia, CDSTenor._5Y),
+    'INDIA CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.India, CDSTenor._5Y),
+    # EMEA
+    'TURKEY CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Turkey, CDSTenor._5Y),
+    'REPSOU CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.SouthAfrica, CDSTenor._5Y),
+    'RUSSIA CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Russia, CDSTenor._5Y),
+    'POLAND CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Poland, CDSTenor._5Y),
+    'HUNGARY CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Hungary, CDSTenor._5Y),
+    'CZECH CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.CzechRepublic, CDSTenor._5Y),
+    'ROMANI CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Romania, CDSTenor._5Y),
+    # Latam
+    'MEX CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Mexico, CDSTenor._5Y),
+    'BRAZIL CDS USD SR 5Y D14 CBIN Corp': (CDSTicker.Brazil, CDSTenor._5Y),
+}
+DB_TO_BBG: Dict[Tuple[str, str], str] = {(i.name, j.value): k for k, (i, j) in BBG_TO_DB.items()}
+DATA_UNIT = 1e4  # convert CDS spread to basis points
+
+
+def parse_ticker_tenor(securities: Iterable[str]) -> Tuple[Set[CDSTicker], Set[CDSTenor]]:
+    def unpack():
+        for i in securities:
+            try:
+                yield BBG_TO_DB[i]
+            except KeyError:
+                pass
+
+    try:
+        tickers, tenors = zip(*unpack())
+    except ValueError:
+        return set(), set()
+    return set(tickers), set(tenors)
+
+
+class CDSMarketDataProvider(MarketDataProvider):
+    db = MarketdataCDS
+    stitch_db = SSLCds
+    stitch_date = datetime.date(2022, 11, 27)
+
+    def _bds(self, securities: List[str], fields: List[str], **kwargs) -> pandas.DataFrame:
+        raise NotImplementedError('bds not supported by CDSMarketDataProvider')
+
+    def _bdp(self, securities: List[str], fields: List[str], **kwargs) -> pandas.Series:
+        tickers, tenors = parse_ticker_tenor(securities)
+        if tickers and tenors:
+            *_, field = fields
+            data = self.db.pull(tickers=tickers, tenors=tenors, **kwargs)
+            data.index = pandas.MultiIndex.from_tuples((DB_TO_BBG[i, j], field) for i, j in data.index)
+            data *= DATA_UNIT
+            return data
+        return pandas.Series()
+
+    def _bdh(self, securities: List[str], fields: List[str], start_date: datetime.date, end_date: datetime.date,
+             **kwargs) -> pandas.DataFrame:
+        if start_date and start_date >= self.stitch_date:
+            return self._bdh_db(securities=securities, fields=fields, start_date=start_date, end_date=end_date,
+                                **kwargs)
+        elif end_date and end_date < self.stitch_date:
+            return self._bdh_stitch(securities=securities, fields=fields, start_date=start_date, end_date=end_date,
+                                    **kwargs)
+        frame = self._bdh_db(securities=securities, fields=fields, start_date=self.stitch_date, end_date=end_date,
+                             **kwargs)
+        frame_ext = self._bdh_stitch(securities=securities, fields=fields, start_date=start_date,
+                                     end_date=self.stitch_date, **kwargs)
+        return frame_ext.append(frame)
+
+    def _bdh_db(self, securities: List[str], fields: List[str], start_date: datetime.date, end_date: datetime.date,
+                **kwargs) -> pandas.DataFrame:
+        tickers, tenors = parse_ticker_tenor(securities)
+        if tickers and tenors:
+            *_, field = fields
+            data = self.db.pull_history(tickers=tickers, tenors=tenors, start_date=start_date, end_date=end_date,
+                                        **kwargs)
+            data.columns = pandas.MultiIndex.from_tuples((DB_TO_BBG[i, j], field) for i, j in data)
+            data *= DATA_UNIT
+            return data
+        return pandas.DataFrame()
+
+    def _bdh_stitch(self, securities: List[str], fields: List[str], start_date: datetime.date, end_date: datetime.date,
+                    **kwargs) -> pandas.DataFrame:
+        tickers, tenors = parse_ticker_tenor(securities)
+        tenors = {i.value for i in tenors}
+        if tickers and tenors:
+            *_, field = fields
+            data = self.stitch_db.pull_history(tickers=tickers, tenors=tenors, start_date=start_date, end_date=end_date,
+                                               **kwargs)
+            data.columns = pandas.MultiIndex.from_tuples((DB_TO_BBG[i, j], field) for i, j in data)
+            data *= DATA_UNIT
+            return data
+        return pandas.DataFrame()
+
+
+if __name__ == '__main__':
+    pass

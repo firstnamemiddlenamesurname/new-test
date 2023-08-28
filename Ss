@@ -1,949 +1,514 @@
-import asyncio
+from __future__ import annotations
+
 import datetime
 import logging
-import re
-import threading
-import weakref
-from importlib import import_module
-from itertools import count
-from typing import List, Dict, Tuple, Any, Union, Optional, Callable, Set, Sequence
+import os
+from enum import Enum
+from typing import List, Set, Tuple, Union, Dict, Sequence, Iterator, Any, Optional
 
 import pandas
-from plasma_client.historic_market_data import HistoricMarketData
-from plasma_client.intraday_market_data import IntradayMarketData
-from plasma_client.market_data import MarketData
-from plasma_client.plasma_client_secure import PlasmaClient
-from plasma_client.reference_data import ReferenceData
+from sqlalchemy import Column, String, Date, Float
+from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import BinaryExpression
 
-from sylo.connection import get_plasma
+from sylo.com import bpipe
+from sylo.com.progress_bar import progress_bar
+from sylo.db import filter_by
+from sylo.db.timescale import BaseModel, session_context
+from sylo.db.timescale.base import Mixin, save_bulk
 
 logger = logging.getLogger(__name__)
-GrpcConnectionError = getattr(import_module('grpc._channel'), '_MultiThreadedRendezvous')
-
-STITCH_PATTERNS: Dict[re.Pattern, Tuple[str, str, str]] = {
-    # forward stitches
-    re.compile(r'ADBS(\d+) (.*)Curncy'): ('ADBSQQ{} {}Curncy,USSRVL{} {}Curncy', '', 'f'),
-    re.compile(r'NDBS(\d+) (.*)Curncy'): ('NDBSQQ{} {}Curncy,USSRVL{} {}Curncy', '', 'f'),
-    re.compile(r'CDBS(\d+) (.*)Curncy'): ('CDXSQQ{} {}Curncy,USSRVL{} {}Curncy', '', 'f'),
-    re.compile(r'SKBS(\d+) (.*)Curncy'): ('SKXOQQ{} {}Curncy,USSRVL{} {}Curncy', '', 'f'),
-    re.compile(r'HDBS(\d+) (.*)Curncy'): ('HISOQ{} {}Curncy,USSRVL{} {}Curncy', '', 'f'),
-    re.compile(r'SDBS(\d+) (.*)Curncy'): ('SDSF6{}Y {}Curncy,USSRVL{} {}Curncy,USBC{} {}Curncy',
-                                          'SD6SRA{} {}Curncy', 'f'),
-    re.compile(r'JYBS1 (.*)Curncy'): ('JYBSS12M {}Curncy,USSRVL1 {}Curncy', 'JYDTQQ1 {}Curncy', 'f'),
-    re.compile(r'JYBS(\d+) (.*)Curncy'): ('JYBSS{}Y {}Curncy,USSRVL{} {}Curncy', 'JYDTQQ{} {}Curncy', 'f'),
-    re.compile(r'BPBS(\d+) (.*)Curncy'): ('BPXOQQ{} {}Curncy,BPSWS{} {}Curncy,BPSFVC{} {}Curncy,USSRVL{} {}Curncy',
-                                          'BPSW{} {}Curncy', 'f'),
-    re.compile(r'EUBS(\d+) (.*)Curncy'): ('EUXOQQ{} {}Curncy,EESWE{} {}Curncy,EUBSV{} {}Curncy,USSRVL{} {}Curncy',
-                                          'EUSA{} {}Curncy', 'f'),
-    # backward stitches
-    re.compile(r'ADBSQQ(\d+) (.*)Curncy'): ('ADBS{} {}Curncy', 'USBG{} {}Curncy', 'b'),
-    re.compile(r'NDBSQQ(\d+) (.*)Curncy'): ('NDBS{} {}Curncy', 'USBG{} {}Curncy', 'b'),
-    re.compile(r'CDXSQQ(\d+) (.*)Curncy'): ('CDBS{} {}Curncy', 'USBG{} {}Curncy', 'b'),
-    re.compile(r'SKXOQQ(\d+) (.*)Curncy'): ('SKBS{} {}Curncy', 'USBG{} {}Curncy', 'b'),
-    re.compile(r'NOXOQQ(\d+) (.*)Curncy'): ('NKBS{} {}Curncy', 'USBG{} {}Curncy', 'b'),
-    re.compile(r'HISOQ(\d+) (.*)Curncy'): ('HDBS{} {}Curncy', 'USBG{} {}Curncy', 'b'),
-    re.compile(r'SDSF615Y (.*)Curncy'): ('SDBS15 CMPN Curncy,SD6SRA15 {}Curncy',
-                                         'USBG15 {}Curncy,USBC15 {}Curncy', 'b'),
-    re.compile(r'SDSF612Y (.*)Curncy'): ('SDBS12 CMPN Curncy,SD6SRA12 {}Curncy',
-                                         'USBG12 {}Curncy,USBC12 {}Curncy', 'b'),
-    re.compile(r'SDSF6(\d+)Y (.*)Curncy'): ('SDBS{} {}Curncy,SD6SRA{} {}Curncy',
-                                            'USBG{} {}Curncy,USBC{} {}Curncy', 'b'),
-    re.compile(r'JYBSS12M (.*)Curncy'): ('JYBS1 {}Curncy,JYSW1 {}Curncy',
-                                         'JYSO1 {}Curncy,JYBC1 {}Curncy,USBG1 {}Curncy', 'b'),
-    re.compile(r'JYBSS(\d+)Y (.*)Curncy'): ('JYBS{} {}Curncy,JYSW{} {}Curncy',
-                                            'JYSO{} {}Curncy,JYBC{} {}Curncy,USBG{} {}Curncy', 'b'),
-    re.compile(r'BPXOQQ(\d+) (.*)Curncy'): ('BPBS{} {}Curncy,BPSW{} {}Curncy',
-                                            'BPSWS{} {}Curncy,BPSFVC{} {}Curncy,USBG{} {}Curncy', 'b'),
-    re.compile(r'EUXOQQ(\d+) (.*)Curncy'): ('EUBS{} {}Curncy,EUSA{} {}Curncy',
-                                            'EESWE{} {}Curncy,EUBSV{} {}Curncy,USBG{} {}Curncy', 'b'),
-}
-STITCH_POINT_SIZE: Dict[Tuple[str, str], float] = {
-    # IRS ticker that is quoted in percent
-    ('EESWE', ' Curncy'): 100,
-    ('EUSA', ' Curncy'): 100,
-    ('BPSWS', ' Curncy'): 100,
-    ('BPSW', ' Curncy'): 100,
-    ('JYSO', ' Curncy'): 100,
-    ('JYSW', ' Curncy'): 100,
-}
+PUSH_BATCH_SIZE = 500
+BDP_TICKER_BATCH_SIZE = 100
+BDP_FIELD_BATCH_SIZE = 1
 
 
-def bdh_stitch(
-        securities: List[str],
-        fields: List[str] = ('LAST_PRICE',),
-        start_date: datetime.date = datetime.date(2000, 1, 1),
-        end_date: datetime.date = None,
-        stitch_date: datetime.date = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if end_date is None:
-        end_date = datetime.date.today()
-    _securities = set(securities)
-    _stitch: Dict[str, Tuple[str, str, str]] = {}
-    for tkr in _securities.copy():
-        for pat, (tkr1, tkr2, flag) in STITCH_PATTERNS.items():
-            match = pat.match(tkr)
-            if match:
-                match_groups = match.groups()
-                if tkr1:
-                    tkr1 = [i.format(*match_groups) for i in tkr1.split(',')]
-                    _securities.update(tkr1)
-                if tkr2:
-                    tkr2 = [i.format(*match_groups) for i in tkr2.split(',')]
-                    _securities.update(tkr2)
-                _stitch[tkr] = (','.join(tkr1), ','.join(tkr2), flag)
-                break
-    raw = bdh(
-        securities=list(_securities),
-        fields=fields,
-        start_date=start_date,
-        end_date=end_date,
-        **kwargs
-    )
+def is_null(x: Any) -> bool:
+    if pandas.isna(x):
+        return True
+    elif x == '':
+        return True
+    return False
 
-    def point_size(x: str) -> float:
-        for (head, tail), val in STITCH_POINT_SIZE.items():
-            if x and x.startswith(head) and x.endswith(tail):
-                return val
-        return 1
 
-    def unpack():
-        for _tkr in securities:
-            if _tkr in raw:
-                w = raw[_tkr].copy()
-                if _tkr in _stitch:
-                    _tkr1, _tkr2, _flag = _stitch[_tkr]
-                    if _tkr1:
-                        _w = sum(raw[i] * point_size(i) for i in _tkr1.split(','))
-                        if _tkr2:
-                            _w -= sum(raw[i] * point_size(i) for i in _tkr2.split(','))
-                    elif _tkr2:
-                        _w = -sum(raw[i] * point_size(i) for i in _tkr2.split(','))
+def normalise_ticker(x: Any) -> str:
+    if not isinstance(x, str):
+        raise TypeError(x)
+    _x: List[str] = [i.upper() for i in x.split(' ') if i]
+    if not _x:
+        raise ValueError('ticker cannot be an empty string')
+    _x[-1] = _x[-1].title()
+    return ' '.join(_x)
+
+
+def normalise_field(x: Any) -> str:
+    if not isinstance(x, str):
+        raise TypeError(x)
+    x = '_'.join(filter(None, x.split(' ')))
+    if not x:
+        raise ValueError('field cannot be an empty string')
+    return x.upper()
+
+
+class BondIssueBase(Mixin):
+    __tablename__: str
+    _as_type: str = 'O'
+    ticker = Column(String, index=True)
+    field = Column(String)
+    value: Column
+    Columns: Enum
+
+    @classmethod
+    def pull(
+            cls,
+            tickers: Union[str, Set[str]] = None,
+            fields: Union[str, Set[str]] = None,
+            extra_filters: Sequence[BinaryExpression] = (),
+            asof: datetime.datetime = None,
+            is_active: bool = True,
+            session: Session = None,
+    ) -> Dict[Tuple[str, str], Any]:
+        cls.ticker: Column
+        cls.field: Column
+        raw: Dict[Tuple[str, str], Any] = {}
+        with session_context(session=session, mode='r', auto_close=True) as sess:
+            query = sess.query(cls.ticker, cls.field, cls.value)
+            query = cls.filter(query, *extra_filters, asof=asof, is_active=is_active)
+            if tickers:
+                query = filter_by(cls.ticker, values=tickers, query=query)
+            if fields:
+                query = filter_by(cls.field, values=fields, query=query)
+            for tkr, fld, v in query.order_by(cls._utc).all():
+                raw[tkr, fld] = v
+        return raw
+
+    @classmethod
+    def from_series(cls, raw: pandas.Series) -> Iterator[BondIssueBase]:
+        for (ticker, field), value in raw.items():
+            if not is_null(value):
+                # noinspection PyArgumentList
+                yield cls(
+                    ticker=normalise_ticker(ticker),
+                    field=normalise_field(field),
+                    value=value,
+                )
+
+    @classmethod
+    def push_series(cls, raw: pandas.Series, force: bool = False, session: Session = None) -> Sequence[BondIssueBase]:
+        def unpack() -> Iterator[BondIssueBase]:
+            items = list(cls.from_series(raw))
+            with session_context(session=session, mode='w', auto_commit=True) as sess:
+                if not force:
+                    db_raw = cls.pull(
+                        tickers={i.ticker for i in items},
+                        fields={i.field for i in items},
+                        session=sess,
+                    )
+                    items = [i for i in items if i.value != db_raw.get((i.ticker, i.field))]
+            if items:
+                yield from save_bulk(progress_bar(items), batch_size=PUSH_BATCH_SIZE, session=sess)
+
+        pushed = list(unpack())
+        if pushed:
+            tickers = set(i.ticker for i in pushed)
+            fields = set(i.field for i in pushed)
+            logger.info(f'pushed {len(pushed)} entries with {len(tickers)} tickers and {len(fields)} fields...')
+        return pushed
+
+    @classmethod
+    def bdp_reference(cls, tickers: Set[str], fields: Set[str] = None) -> pandas.Series:
+        if fields is None:
+            # noinspection PyTypeChecker
+            fields = {i.value for i in cls.Columns}
+        tickers, fields = list(tickers), list(fields)
+
+        if tickers and fields:
+            def unpack():
+                kwd = [(fields[i:i + BDP_FIELD_BATCH_SIZE], tickers[j:j + BDP_TICKER_BATCH_SIZE])
+                       for i in range(0, len(fields), BDP_FIELD_BATCH_SIZE)
+                       for j in range(0, len(tickers), BDP_TICKER_BATCH_SIZE)]
+                for _fields, _tickers in progress_bar(kwd):
+                    try:
+                        data = bpipe.bdp_reference(securities=_tickers, fields=_fields)
+                    except bpipe.BpipeError as e:
+                        logger.error(f'failed to fetch fields {_fields} in {len(_tickers)} tickers\n{e}')
                     else:
-                        raise ValueError(_tkr)
-                    if _flag == 'f':
-                        _stitch_date = stitch_date or w.last_valid_index()
-                        w.loc[_stitch_date:] = _w.loc[_stitch_date:]
-                    elif _flag == 'b':
-                        _stitch_date = stitch_date or w.first_valid_index()
-                        w.loc[:_stitch_date] = _w.loc[:_stitch_date]
-                for k, v in w.items():
-                    yield (_tkr, k), v
+                        yield data.astype(cls._as_type)
 
-    frame = pandas.DataFrame(dict(unpack()))
-    frame.dropna(how='all', inplace=True)
-    return frame
+            logger.debug(f'fetching {cls.__name__} for {len(tickers)} tickers and {len(fields)} fields ...')
+            return pandas.concat(unpack())
+        return pandas.Series(dtype=str)
 
+    @classmethod
+    def push_from_bpipe(cls, tickers: Set[str], fields: Set[str] = None, reload: bool = False, force: bool = False,
+                        session: Session = None) -> Sequence[BondIssueBase]:
+        if fields is None:
+            # noinspection PyTypeChecker
+            fields = {i.value for i in cls.Columns}
 
-# backward compatibility
-bdh_forward_filled_xcb = bdh_stitch
-bdh_backward_filled_xcb = bdh_stitch
+        def unpack() -> Iterator[BondIssueBase]:
+            _fields = set(map(normalise_field, fields))
+            _tickers = set(map(normalise_ticker, tickers))
+            with session_context(session=session, mode='w', auto_commit=True) as sess:
+                if not reload:
+                    db_raw = cls.pull(tickers=_tickers, fields=_fields, session=sess)
+                    _tickers -= {i for i, _ in db_raw}
+                if _tickers:
+                    raw = cls.bdp_reference(tickers=_tickers, fields=_fields)
+                    yield from cls.push_series(raw, force=force, session=sess)
 
-BPIPE_CACHE: Dict[Tuple[Tuple[str], Tuple[str], datetime.date, datetime.date, bool], pandas.DataFrame] = {}
-
-
-def bdh(
-        securities: List[str],
-        fields: List[str],
-        start_date: datetime.date,
-        end_date: datetime.date,
-        fill_holidays: bool = False,
-        plasma_client: PlasmaClient = None,
-        use_cache: bool = False,
-        **kwargs
-) -> pandas.DataFrame:
-    key = None
-    if use_cache:
-        key = tuple(sorted(securities)), tuple(sorted(fields)), start_date, end_date, fill_holidays
-        if key in BPIPE_CACHE:
-            return BPIPE_CACHE[key].copy()
-
-    frame = _bdh(securities, fields, start_date=start_date, end_date=end_date, fill_holidays=fill_holidays,
-                 plasma_client=plasma_client, **kwargs)
-
-    if use_cache:
-        BPIPE_CACHE[key] = frame.copy()
-    return frame
+        return list(unpack())
 
 
-class BpipeError(Exception):
-    pass
+class BondIssueString(BondIssueBase, BaseModel):
+    __tablename__ = 'bond_issue_string'
+    value = Column(String)
+
+    class Columns(Enum):
+        NAME = 'LONG_COMP_NAME'
+        DOMICILE = 'CNTRY_OF_DOMICILE'
+        CURRENCY = 'CRNCY'
+        # SERIES = 'SERIES'
+        MATURITY_TYPE = 'MTY_TYP'
+        RATING = 'BB_COMPOSITE'
+
+    @classmethod
+    def find_tickers(
+            cls,
+            domicile_include: Set[str] = None,
+            domicile_exclude: Set[str] = None,
+            currency_include: Set[str] = None,
+            currency_exclude: Set[str] = None,
+            session: Session = None,
+    ) -> Set[str]:
+        cls.value: Column
+        with session_context(session=session, mode='r', auto_close=True) as sess:
+            tickers: Set[str] = set(j for i in sess.query(cls.ticker).distinct().all() for j in i)
+            if tickers and domicile_include:
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.DOMICILE.value).filter(
+                    cls.value.in_(domicile_include))
+                tickers &= set(j for i in query.distinct().all() for j in i)
+            if tickers and domicile_exclude:
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.DOMICILE.value).filter(
+                    cls.value.notin_(domicile_exclude))
+                tickers &= set(j for i in query.distinct().all() for j in i)
+            if tickers and currency_include:
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.CURRENCY.value).filter(
+                    cls.value.in_(currency_include))
+                tickers &= set(j for i in query.distinct().all() for j in i)
+            if tickers and currency_exclude:
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.CURRENCY.value).filter(
+                    cls.value.notin_(currency_exclude))
+                tickers &= set(j for i in query.distinct().all() for j in i)
+        return tickers
 
 
-def _is_warning(err: str) -> bool:
-    # jchi@202102
-    # regard "Field missing in bloomberg response" error as warning message
-    return 'Field missing in bloomberg response' in err
+class BondIssueDate(BondIssueBase, BaseModel):
+    __tablename__ = 'bond_issue_date'
+    _as_type = 'datetime64'
+    value = Column(Date)
+
+    class Columns(Enum):
+        ANNOUNCE_DATE = 'ANNOUNCE_DT'
+        ISSUE_DATE = 'ISSUE_DT'
+        MATURITY_DATE = 'MATURITY'
+
+    @classmethod
+    def find_tickers(
+            cls,
+            issue_date_range: Tuple[datetime.date, datetime.date] = None,
+            announce_date_range: Tuple[datetime.date, datetime.date] = None,
+            maturity_date_range: Tuple[datetime.date, datetime.date] = None,
+            session: Session = None,
+    ) -> Set[str]:
+        with session_context(session=session, mode='r', auto_close=True) as sess:
+            tickers: Set[str] = set(j for i in sess.query(cls.ticker).distinct().all() for j in i)
+            if tickers and issue_date_range:
+                start_date, end_date = issue_date_range
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.ISSUE_DATE.value)
+                if start_date:
+                    query = query.filter(cls.value >= start_date)
+                if end_date:
+                    query = query.filter(cls.value <= end_date)
+                tickers &= set(j for i in query.distinct().all() for j in i)
+            if tickers and announce_date_range:
+                start_date, end_date = announce_date_range
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.ANNOUNCE_DATE.value)
+                if start_date:
+                    query = query.filter(cls.value >= start_date)
+                if end_date:
+                    query = query.filter(cls.value <= end_date)
+                tickers &= set(j for i in query.distinct().all() for j in i)
+            if tickers and maturity_date_range:
+                start_date, end_date = maturity_date_range
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.MATURITY_DATE.value)
+                if start_date:
+                    query = query.filter(cls.value >= start_date)
+                if end_date:
+                    query = query.filter(cls.value <= end_date)
+                tickers &= set(j for i in query.distinct().all() for j in i)
+        return tickers
 
 
-def _bdh_results(res: List[HistoricMarketData], raise_on_error: bool = True) -> pandas.DataFrame:
-    dct: Dict[Tuple[str, str], Dict[datetime.datetime, float]] = {}
-    err: List[str] = []
-    for data in res:
-        if data.error and not _is_warning(data.error):
-            err.append(data.security)
-            err.append(data.error)
-        if data.history:
-            for row in data.history:
-                if row.date >= 0:
-                    dt = datetime.datetime.utcfromtimestamp(row.date / 1000)
-                else:
-                    dt = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=row.date / 1000)
-                for fld, val in zip(data.fields, row.data):
-                    if val in ('', None):
-                        continue
-                    dct.setdefault((data.security, fld), {})[dt] = float(val)
-    if err and raise_on_error:
-        raise BpipeError(*err)
+class BondIssueFloat(BondIssueBase, BaseModel):
+    __tablename__ = 'bond_issue_float'
+    _as_type = 'float64'
+    value = Column(Float)
 
-    frame = pandas.DataFrame(dct)
-    frame.sort_index(inplace=True)
-    return frame
+    class Columns(Enum):
+        AMOUNT_ISSUED = 'AMT_ISSUED'
+        COUPON = 'CPN'
+        TENOR = 'YRS_TO_MTY_ISSUE'
 
-
-def _bdh(
-        securities: List[str],
-        fields: List[str],
-        start_date: datetime.date,
-        end_date: datetime.date,
-        fill_holidays: bool = False,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if not securities or not fields:
-        return _bdh_results([])
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    if fill_holidays:
-        kwargs.setdefault('additional_parameters', {}).update({
-            'nonTradingDayFillOption': 'NON_TRADING_WEEKDAYS',
-            'nonTradingDayFillMethod': 'PREVIOUS_VALUE'
-        })
-    res: List[HistoricMarketData] = plasma_client.bloomberg.history(
-        securities=securities,
-        field_list=fields,
-        start_date_time=start_date.strftime('%Y%m%d'),
-        stop_date_time=end_date.strftime('%Y%m%d'),
-        **kwargs
-    )
-
-    return _bdh_results(res, raise_on_error=raise_on_error)
+    @classmethod
+    def find_tickers(
+            cls,
+            tenor_range: Tuple[float, float] = None,
+            amount_issued_range: Tuple[float, float] = None,
+            session: Session = None,
+    ) -> Set[str]:
+        with session_context(session=session, mode='r', auto_close=True) as sess:
+            tickers: Set[str] = set(j for i in sess.query(cls.ticker).distinct().all() for j in i)
+            if tickers and tenor_range:
+                _min, _max = tenor_range
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.TENOR.value)
+                if _min is not None:
+                    query = query.filter(cls.value >= _min)
+                if _max is not None:
+                    query = query.filter(cls.value <= _max)
+                tickers &= set(j for i in query.distinct().all() for j in i)
+            if tickers and amount_issued_range:
+                _min, _max = amount_issued_range
+                query = sess.query(cls.ticker).filter(cls.field == cls.Columns.AMOUNT_ISSUED.value)
+                if _min is not None:
+                    query = query.filter(cls.value >= _min)
+                if _max is not None:
+                    query = query.filter(cls.value <= _max)
+                tickers &= set(j for i in query.distinct().all() for j in i)
+        return tickers
 
 
-async def bdh_async(
-        securities: List[str],
-        fields: List[str],
-        start_date: datetime.date,
-        end_date: datetime.date,
-        fill_holidays: bool = False,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if not securities or not fields:
-        return _bdh_results([])
-    if plasma_client is None:
-        plasma_client = get_plasma()
+class BondIssue:
+    __tables__ = (BondIssueString, BondIssueDate, BondIssueFloat)
 
-    if fill_holidays:
-        kwargs.setdefault('additional_parameters', {}).update({
-            'nonTradingDayFillOption': 'NON_TRADING_WEEKDAYS',
-            'nonTradingDayFillMethod': 'PREVIOUS_VALUE'
-        })
-    res: List[HistoricMarketData] = await plasma_client.bloomberg.history_async(
-        securities=securities,
-        field_list=fields,
-        start_date_time=start_date.strftime('%Y%m%d'),
-        stop_date_time=end_date.strftime('%Y%m%d'),
-        **kwargs
-    )
-
-    return _bdh_results(res, raise_on_error=raise_on_error)
-
-
-def _bdh_intraday_bar_results(res: List[IntradayMarketData], return_utc_timestamp: bool = True,
-                              raise_on_error: bool = True) -> pandas.DataFrame:
-    dct: Dict[Tuple[str, str], Dict[datetime.datetime, float]] = {}
-    err: List[str] = []
-    for data in res:
-        if data.error:
-            err.append(data.security)
-            err.append(data.error)
-        if data.bars:
-            for bar in data.bars:
-                if return_utc_timestamp:
-                    dt = datetime.datetime.utcfromtimestamp(bar.time / 1000)
-                else:
-                    dt = datetime.datetime.fromtimestamp(bar.time / 1000)
-                for fld in ('open', 'high', 'low', 'close', 'num_events', 'volume'):
-                    dct.setdefault((data.security, fld), {})[dt] = float(getattr(bar, fld))
-    if err and raise_on_error:
-        raise BpipeError(*err)
-
-    return pandas.DataFrame(dct).sort_index()
-
-
-INTRADAY_FIELD_MAP = {
-    'LAST_PRICE': 'TRADE',
-    'PX_LAST': 'TRADE',
-}
-
-
-def bdh_intraday_bar(
-        securities: List[str],
-        field: str,  # valid options: TRADE, BID, ASK
-        start_datetime: datetime.datetime,
-        end_datetime: datetime.datetime,
-        bar_size: int,  # number of minutes
-        return_utc_timestamp: bool = True,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if not securities or not field:
-        return _bdh_intraday_bar_results([])
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    field = INTRADAY_FIELD_MAP.get(field.upper(), field)
-    res: List[IntradayMarketData] = plasma_client.bloomberg.intraday(
-        securities=securities,
-        field_list=[field],
-        interval=bar_size,
-        start_date_time=start_datetime.astimezone(datetime.timezone.utc).isoformat(),
-        stop_date_time=end_datetime.astimezone(datetime.timezone.utc).isoformat(),
-        **kwargs
-    )
-
-    return _bdh_intraday_bar_results(res, return_utc_timestamp=return_utc_timestamp, raise_on_error=raise_on_error)
-
-
-async def bdh_intraday_bar_async(
-        securities: List[str],
-        field: str,  # valid options: TRADE, BID, ASK
-        start_datetime: datetime.datetime,
-        end_datetime: datetime.datetime,
-        bar_size: int,  # number of minutes
-        return_utc_timestamp: bool = True,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if not securities or not field:
-        return _bdh_intraday_bar_results([])
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    field = INTRADAY_FIELD_MAP.get(field.upper(), field)
-    res: List[IntradayMarketData] = await plasma_client.bloomberg.intraday_async(
-        securities=securities,
-        field_list=[field],
-        interval=bar_size,
-        start_date_time=start_datetime.astimezone(datetime.timezone.utc).isoformat(),
-        stop_date_time=end_datetime.astimezone(datetime.timezone.utc).isoformat(),
-        **kwargs
-    )
-
-    return _bdh_intraday_bar_results(res, return_utc_timestamp=return_utc_timestamp, raise_on_error=raise_on_error)
-
-
-def _format_override_value(x: Any) -> str:
-    if isinstance(x, datetime.date):
-        return x.strftime('%Y%m%d')
-    return str(x)
-
-
-def _format_overrides(overrides: Union[str, Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
-    if isinstance(overrides, dict):
-        return {k: _format_override_value(v) for k, v in overrides.items()}
-    elif isinstance(overrides, str):
-        def unpack():
-            for i in overrides.split(';'):
-                k, _, v = i.partition('=')
-                yield k, _format_override_value(v)
+    @classmethod
+    def pull(
+            cls,
+            tickers: Union[str, Set[str]] = None,
+            fields: Union[str, Set[str]] = None,
+            asof: datetime.datetime = None,
+            is_active: bool = True,
+            session: Session = None,
+    ) -> Dict[Tuple[str, str], Any]:
+        def unpack() -> Iterator[Tuple[Tuple[str, str], Any]]:
+            with session_context(session=session, mode='r', auto_close=True) as sess:
+                for _cls in cls.__tables__:
+                    yield from _cls.pull(
+                        tickers=tickers,
+                        fields=fields,
+                        asof=asof,
+                        is_active=is_active,
+                        session=sess,
+                    ).items()
 
         return dict(unpack())
-    return overrides
+
+    @classmethod
+    def push_from_bpipe(
+            cls,
+            tickers: Set[str],
+            fields: Set[str] = None,
+            reload: bool = False,
+            force: bool = False,
+            session: Session = None,
+    ) -> Sequence[BondIssueBase]:
+        def unpack() -> Iterator[BondIssueBase]:
+            with session_context(session=session, mode='w', auto_commit=True) as sess:
+                for _cls in cls.__tables__:
+                    _fields = fields
+                    if fields:
+                        _fields = set(fields) & {i.value for i in _cls.Columns}
+                    yield from _cls.push_from_bpipe(
+                        tickers=tickers,
+                        fields=_fields,
+                        reload=reload,
+                        force=force,
+                        session=sess,
+                    )
+
+        return list(unpack())
+
+    @staticmethod
+    def find_tickers(
+            domicile_include: Set[str] = None,
+            domicile_exclude: Set[str] = None,
+            currency_include: Set[str] = None,
+            currency_exclude: Set[str] = None,
+            issue_date_range: Tuple[datetime.date, datetime.date] = None,
+            announce_date_range: Tuple[datetime.date, datetime.date] = None,
+            maturity_date_range: Tuple[datetime.date, datetime.date] = None,
+            tenor_range: Tuple[float, float] = None,
+            amount_issued_range: Tuple[float, float] = None,
+            session: Session = None,
+    ) -> Set[str]:
+        with session_context(session=session, mode='r', auto_close=True) as sess:
+            tickers = BondIssueString.find_tickers(
+                domicile_include=domicile_include,
+                domicile_exclude=domicile_exclude,
+                currency_include=currency_include,
+                currency_exclude=currency_exclude,
+                session=sess,
+            )
+            if tickers and (issue_date_range or announce_date_range or maturity_date_range):
+                tickers &= BondIssueDate.find_tickers(
+                    issue_date_range=issue_date_range,
+                    announce_date_range=announce_date_range,
+                    maturity_date_range=maturity_date_range,
+                    session=sess,
+                )
+            if tickers and (tenor_range or amount_issued_range):
+                tickers &= BondIssueFloat.find_tickers(
+                    tenor_range=tenor_range,
+                    amount_issued_range=amount_issued_range,
+                    session=sess,
+                )
+        return tickers
 
 
-def _bdp_reference_results(res: Dict[str, ReferenceData], raise_on_error: bool = True) -> pandas.Series:
-    dct: Dict[Tuple[str, str], Any] = {}
-    err: List[str] = []
-    for key, data in res.items():
-        assert key == data.security, f'unmatched key vs security: {key} vs {data.security}'
-        if data.error:
-            err.append(data.security)
-            err.append(data.error)
-        if data.field_values:  # field_values is None when it's empty
-            for field, val in data.field_values.items():
-                val = _format_bdp_value(val)
-                if val is not None:
-                    dct[key, field] = val
-    if err and raise_on_error:
-        raise BpipeError(*err)
-    if dct:
-        return pandas.Series(dct)
-    return pandas.Series(dct, dtype=str)  # mute warning for empty Series (default behaviour in future versions)
+def _currency_conversion(raw: pandas.DataFrame, currency: str = 'USD') -> pandas.DataFrame:
+    _raw = raw[['CURRENCY', 'AMOUNT_ISSUED', 'ANNOUNCE_DATE', 'ISSUE_DATE']]
+    fx_tickers: Dict[str, str] = {f'{currency}{i} Curncy': i for i in set(_raw['CURRENCY']) if i != currency}
+    start_date = min(_raw['ANNOUNCE_DATE'].dropna().min(), _raw['ISSUE_DATE'].dropna().min())
+    end_date = max(_raw['ANNOUNCE_DATE'].dropna().max(), _raw['ISSUE_DATE'].dropna().max())
+    logger.debug(f'fetching {len(fx_tickers)} fx tickers ...')
+    fx_raw = bpipe.bdh(list(fx_tickers), fields=['LAST_PRICE'], start_date=start_date, end_date=end_date)
+    fx_data = fx_raw.droplevel(1, axis=1).rename(fx_tickers, axis=1)
+
+    def unpack():
+        for (_, row), (_, announce_fx), (_, issue_fx) in progress_bar(zip(
+                _raw.iterrows(),
+                fx_data.asof(pandas.DatetimeIndex(_raw['ANNOUNCE_DATE'])).iterrows(),
+                fx_data.asof(pandas.DatetimeIndex(_raw['ISSUE_DATE'])).iterrows(),
+        ), total=len(_raw)):
+            ccy = row['CURRENCY']
+            announce_amount = issue_amount = row['AMOUNT_ISSUED']
+            if ccy != currency:
+                announce_amount /= float('nan') if pandas.isna(announce_fx.name) else announce_fx[ccy]
+                issue_amount /= float('nan') if pandas.isna(issue_fx.name) else issue_fx[ccy]
+            yield {
+                currency + '_AMOUNT_ON_ANNOUNCE_DATE': announce_amount,
+                currency + '_AMOUNT_ON_ISSUE_DATE': issue_amount,
+            }
+
+    return pandas.DataFrame(unpack(), index=raw.index)
 
 
-def _format_bdp_value(x: Any) -> Any:
-    if not x and x != 0:
-        # empty str/list/dict/set to None
-        return None
-    elif isinstance(x, str):
-        try:
-            return float(x)
-        except ValueError:
-            pass
-    return x
+def find_issuance(
+        domicile_include: Set[str] = None,
+        domicile_exclude: Set[str] = None,
+        currency_include: Set[str] = None,
+        currency_exclude: Set[str] = None,
+        issue_date_range: Tuple[datetime.date, datetime.date] = None,
+        announce_date_range: Tuple[datetime.date, datetime.date] = None,
+        maturity_date_range: Tuple[datetime.date, datetime.date] = None,
+        tenor_range: Tuple[float, float] = None,
+        amount_issued_range: Tuple[float, float] = None,
+        limit: Optional[int] = 10_000,
+        currency_conversion: str = None,
+        session: Session = None,
+) -> pandas.DataFrame:
+    """
+    Helper function to search for bond issuance data.
 
-
-def bdp_reference(
-        securities: List[str],
-        fields: List[str],
-        overrides: Union[str, Dict[str, Any]] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    if not securities or not fields:
-        return _bdp_reference_results({})
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    res: Dict[str, ReferenceData] = plasma_client.bloomberg.reference(
-        securities=securities,
-        field_list=fields,
-        overrides=_format_overrides(overrides),
-        **kwargs
-    )
-
-    return _bdp_reference_results(res, raise_on_error=raise_on_error)
-
-
-async def bdp_reference_async(
-        securities: List[str],
-        fields: List[str],
-        overrides: Union[str, Dict[str, Any]] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    if not securities or not fields:
-        return _bdp_reference_results({})
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    res: Dict[str, ReferenceData] = await plasma_client.bloomberg.reference_async(
-        securities=securities,
-        field_list=fields,
-        overrides=_format_overrides(overrides),
-        **kwargs
-    )
-
-    return _bdp_reference_results(res, raise_on_error=raise_on_error)
-
-
-def _bdp_latest_results(res: List[MarketData], raise_on_error: bool = True) -> pandas.Series:
-    dct: Dict[Tuple[str, str], Any] = {}
-    err: List[str] = []
-    for data in res:
-        if data.error:
-            err.append(data.security)
-            err.append(data.error)
-        if data.field_values:  # field_values is a list!!! when it's empty
-            for field, val in data.field_values.items():
-                val = _format_bdp_value(val)
-                if val is not None:
-                    dct[data.security, field] = val
-    if err and raise_on_error:
-        raise BpipeError(*err)
-    if dct:
-        return pandas.Series(dct)
-    return pandas.Series(dct, dtype=str)  # mute warning for empty Series (default behaviour in future versions)
-
-
-def bdp_latest(
-        securities: List[str],
-        fields: List[str],
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    if not securities or not fields:
-        return _bdp_latest_results([])
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    res: List[MarketData] = plasma_client.bloomberg.latest(
-        securities=securities,
-        field_list=fields,
-        **kwargs
-    )
-
-    return _bdp_latest_results(res, raise_on_error=raise_on_error)
-
-
-async def bdp_latest_async(
-        securities: List[str],
-        fields: List[str],
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    if not securities or not fields:
-        return _bdp_latest_results([])
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    res: List[MarketData] = await plasma_client.bloomberg.latest_async(
-        securities=securities,
-        field_list=fields,
-        **kwargs
-    )
-
-    return _bdp_latest_results(res, raise_on_error=raise_on_error)
-
-
-BBG_DYNAMIC_FIELDS = {
-    'LAST_PRICE',
-    'LAST_PRICE_TIME_TODAY_REALTIME',
-    'TIME'
-    'LAST_TRADE',
-    'TRADE_UPDATE_STAMP_RT',
-    'BID',
-    'BID_SIZE',
-    'ASK',
-    'ASK_SIZE',
-    'VOLUME',
-    'VOLUME_THEO',
-}
-
-
-async def bdp_async(
-        securities: List[str],
-        fields: List[str],
-        overrides: Union[str, Dict[str, Any]] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    unique_fields = set(i.upper() for i in fields)
-    dynamic_fields = list(unique_fields & BBG_DYNAMIC_FIELDS)
-    reference_fields = list(unique_fields - BBG_DYNAMIC_FIELDS)
-    kwargs_ = {k: v for k, v in kwargs.items() if k != 'reload'}  # filter out non bdp_latest_async kwargs
-
-    if not reference_fields:
-        sr = await bdp_latest_async(securities=securities, fields=dynamic_fields, raise_on_error=raise_on_error,
-                                    plasma_client=plasma_client, **kwargs_)
-    elif not dynamic_fields:
-        sr = await bdp_reference_async(securities=securities, fields=reference_fields, overrides=overrides,
-                                       raise_on_error=raise_on_error, plasma_client=plasma_client, **kwargs)
-    else:
-        sr1, sr2 = await asyncio.gather(
-            bdp_latest_async(securities=securities, fields=dynamic_fields, raise_on_error=raise_on_error,
-                             plasma_client=plasma_client, **kwargs_),
-            bdp_reference_async(securities=securities, fields=reference_fields, overrides=overrides,
-                                raise_on_error=raise_on_error, plasma_client=plasma_client, **kwargs)
+    :param domicile_include: Set[str], a collection of domicile country codes that the search includes
+    :param domicile_exclude: Set[str], a collection of domicile country codes that the search excludes
+    :param currency_include: Set[str], a collection of currency codes that the search includes
+    :param currency_exclude: Set[str], a collection of currency codes that the search excludes
+    :param issue_date_range: Tuple[date, date], the min/max issue date range that the search includes
+    :param announce_date_range: Tuple[date, date], the min/max announce date range that the search includes
+    :param maturity_date_range: Tuple[date, date], the min/max maturity date range that the search includes
+    :param tenor_range: Tuple[float, float], the min/max bond tenor range that the search includes
+    :param amount_issued_range: Tuple[float, float], the min/max issue amount range that the search includes
+    :param limit: int, the maximum number of bonds to return. When is None, no limit is set.
+    :param currency_conversion: Optional[str], the currency to which issued amount is converted, e.g. 'USD'
+    :param session: sqlalchemy.orm.Session, the session object for database access
+    :return: a pandas.DataFrame of the search result.
+    """
+    columns: Dict[str, str] = {j.value: j.name for i in BondIssue.__tables__ for j in i.Columns}
+    raw: Dict[str, Dict[str, Any]] = {}
+    with session_context(session=session, mode='r', auto_close=True) as sess:
+        tickers = BondIssue.find_tickers(
+            domicile_include=domicile_include,
+            domicile_exclude=domicile_exclude,
+            currency_include=currency_include,
+            currency_exclude=currency_exclude,
+            issue_date_range=issue_date_range,
+            announce_date_range=announce_date_range,
+            maturity_date_range=maturity_date_range,
+            tenor_range=tenor_range,
+            amount_issued_range=amount_issued_range,
+            session=sess,
         )
-        sr = sr1.append(sr2)
-
-    return sr[[(i, j) for i in securities for j in fields if (i, j) in sr.index]]
-
-
-def bdp(
-        securities: List[str],
-        fields: List[str],
-        overrides: Union[str, Dict[str, Any]] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    unique_fields = set(i.upper() for i in fields)
-    dynamic_fields = list(unique_fields & BBG_DYNAMIC_FIELDS)
-    reference_fields = list(unique_fields - BBG_DYNAMIC_FIELDS)
-    kwargs_ = {k: v for k, v in kwargs.items() if k != 'reload'}  # filter out non bdp_latest kwargs
-
-    if not reference_fields:
-        sr = bdp_latest(securities=securities, fields=dynamic_fields, raise_on_error=raise_on_error,
-                        plasma_client=plasma_client, **kwargs_)
-    elif not dynamic_fields:
-        sr = bdp_reference(securities=securities, fields=reference_fields, overrides=overrides,
-                           raise_on_error=raise_on_error, plasma_client=plasma_client, **kwargs)
-    else:
-        sr1 = bdp_latest(securities=securities, fields=dynamic_fields, raise_on_error=raise_on_error,
-                         plasma_client=plasma_client, **kwargs_)
-        sr2 = bdp_reference(securities=securities, fields=reference_fields, overrides=overrides,
-                            raise_on_error=raise_on_error, plasma_client=plasma_client, **kwargs)
-        sr = sr1.append(sr2)
-
-    return sr[[(i, j) for i in securities for j in fields if (i, j) in sr.index]]
-
-
-async def bdp_asof_async(
-        securities: List[str],
-        fields: List[str],
-        asof: Union[datetime.date, datetime.datetime] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    if isinstance(asof, datetime.datetime):
-        kwargs.setdefault('bar_size', 60)  # default to 60 minute bar
-        start_datetime = asof - datetime.timedelta(minutes=kwargs['bar_size'])
-        raw: Dict[Tuple[str, str], float] = {}
-
-        async def run(field: str):
-            assert isinstance(asof, datetime.datetime)  # to please IDE
-            data = await bdh_intraday_bar_async(securities=securities, field=field, start_datetime=start_datetime,
-                                                end_datetime=asof, raise_on_error=raise_on_error,
-                                                plasma_client=plasma_client, **kwargs)
-            if len(data):
-                assert isinstance(data.columns, pandas.MultiIndex)
-                for tkr in data.columns.levels[0]:
-                    raw[tkr, field] = data[tkr]['close'].dropna().sort_index().iloc[-1]
-
-        await asyncio.gather(*(run(f) for f in fields))
-        return pandas.Series(raw, name=asof)
-
-    elif isinstance(asof, datetime.date):
-        frame = await bdh_async(securities=securities, fields=fields, start_date=asof, end_date=asof,
-                                raise_on_error=raise_on_error, plasma_client=plasma_client, **kwargs)
-        return frame.iloc[0]
-    return await bdp_async(securities=securities, fields=fields, raise_on_error=raise_on_error,
-                           plasma_client=plasma_client, **kwargs)
-
-
-def bdp_asof(
-        securities: List[str],
-        fields: List[str],
-        asof: Union[datetime.date, datetime.datetime] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.Series:
-    if isinstance(asof, datetime.datetime):
-        kwargs.setdefault('bar_size', 60)  # default to 60 minute bar
-        start_datetime = asof - datetime.timedelta(minutes=kwargs['bar_size'])
-
-        raw: Dict[Tuple[str, str], float] = {}
-        for field in fields:
-            data = bdh_intraday_bar(securities=securities, field=field, start_datetime=start_datetime,
-                                    end_datetime=asof, raise_on_error=raise_on_error, plasma_client=plasma_client,
-                                    **kwargs)
-            if len(data):
-                assert isinstance(data.columns, pandas.MultiIndex)
-                for tkr in data.columns.levels[0]:
-                    raw[tkr, field] = data[tkr]['close'].dropna().sort_index().iloc[-1]
-
-        return pandas.Series(raw, name=asof)
-
-    elif isinstance(asof, datetime.date):
-        frame = bdh(securities=securities, fields=fields, start_date=asof, end_date=asof,
-                    raise_on_error=raise_on_error, plasma_client=plasma_client, **kwargs)
-        if len(frame):
-            return frame.iloc[0]
-        return pandas.Series([], name=asof, dtype=float)
-    return bdp(securities=securities, fields=fields, raise_on_error=raise_on_error, plasma_client=plasma_client,
-               **kwargs)
-
-
-def _bds_results(res: Dict[str, ReferenceData], raise_on_error: bool = True) -> pandas.DataFrame:
-    raw: Dict[Tuple[str, str, str], Dict[int, Any]] = {}
-    err: List[str] = []
-    for key, data in res.items():
-        assert key == data.security, f'unmatched key vs security: {key} vs {data.security}'
-        if data.error:
-            err.append(data.security)
-            err.append(data.error)
-        if data.field_values:
-            for field, values in data.field_values.items():
-                for value in values:
-                    for k, v in value.items():
-                        dct = raw.setdefault((key, field, k), {})
-                        dct[len(dct)] = _format_bdp_value(v)
-    if err and raise_on_error:
-        raise BpipeError(*err)
-    return pandas.DataFrame(raw)
-
-
-def bds(
-        securities: List[str],
-        fields: List[str],
-        overrides: Union[str, Dict[str, Any]] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if not securities or not fields:
-        return _bds_results({})
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    res: Dict[str, ReferenceData] = plasma_client.bloomberg.reference(
-        securities=securities,
-        field_list=fields,
-        overrides=_format_overrides(overrides),
-        **kwargs
-    )
-
-    return _bds_results(res, raise_on_error=raise_on_error)
-
-
-async def bds_async(
-        securities: List[str],
-        fields: List[str],
-        overrides: Union[str, Dict[str, Any]] = None,
-        raise_on_error: bool = True,
-        plasma_client: PlasmaClient = None,
-        **kwargs
-) -> pandas.DataFrame:
-    if not securities or not fields:
-        return _bds_results({})
-    if plasma_client is None:
-        plasma_client = get_plasma()
-
-    res: Dict[str, ReferenceData] = await plasma_client.bloomberg.reference_async(
-        securities=securities,
-        field_list=fields,
-        overrides=_format_overrides(overrides),
-        **kwargs
-    )
-
-    return _bds_results(res, raise_on_error=raise_on_error)
-
-
-def get_fut_chain(ticker: str, reload: bool = False) -> Optional[List[str]]:
-    # jchi@202109
-    # purely for backward compatibility to replace tools.mktdata.bpipe.get_fut_chain
-    try:
-        frame = bds([ticker], ['FUT_CHAIN'], reload=reload)
-    except BpipeError:
-        return None
-    return [i for i in frame[ticker, 'FUT_CHAIN'].iloc[:, 0]]
-
-
-def get_settle_dt(tickers: Sequence[str], asof: datetime.date = None) -> Dict[str, datetime.date]:
-    if asof is None:
-        asof = datetime.date.today()
-    # jchi@202110
-    # use overrides to force atom/plasma to bypass the cache and hit bpipe directly
-    raw = bdp_reference(list(tickers), fields=['SETTLE_DT'], overrides={'REFERENCE_DATE': asof})
-    return {k: datetime.datetime.strptime(v, '%Y-%m-%d').date() for (k, _), v in raw.items()}
-
-
-class Binder:
-    __slots__ = 'bindings', 'prev_value', 'hit_count'
-    UPDATE_ON_CHANGE: bool = True
-    verbose: bool = False
-
-    def __init__(self):
-        self.bindings: List[weakref.ReferenceType] = []
-        self.prev_value: Any = None
-        self.hit_count: int = 0
-
-    def bind(self, func: Callable[[str, str, Any], None]):
-        if not callable(func):
-            raise ValueError(func)
-
-        def unpack():
-            already_bound = False
-            for weak_ref in self.bindings:
-                binding = weak_ref()
-                if binding is not None:
-                    yield weak_ref
-                    if binding == func:
-                        already_bound = True
-            if not already_bound:
-                yield weakref.ref(func)
-
-        self.bindings = list(unpack())
-
-    def unbind(self, func: Callable) -> Optional[Callable[[str, str, Any], None]]:
-        for idx, weak_ref in enumerate(self.bindings):
-            binding = weak_ref()
-            if func == binding:  # enforce equality instead of identity to handle bound methods
-                self.bindings.pop(idx)
-                return binding
-        return None
-
-    def __call__(self, ticker: str, field: str, value: Any):
-        if self.verbose:
-            logger.debug(f'{ticker}@{field} -> {value}')
-        self.hit_count += 1
-        if not self.UPDATE_ON_CHANGE or value != self.prev_value:
-            self.prev_value = value
-            for weak_ref in self.bindings:
-                binding = weak_ref()
-                if binding is not None:
-                    binding(ticker, field, value)
-
-
-SUBSCRIPTION_BINDINGS: Dict[Tuple[str, str], Binder] = {}
-
-
-def bind(ticker: str, field: str, func: Callable[[str, str, Any], None]):
-    try:
-        binder = SUBSCRIPTION_BINDINGS[ticker, field]
-    except KeyError:
-        binder = SUBSCRIPTION_BINDINGS[ticker, field] = Binder()
-    binder.bind(func)
-
-
-def unbind(ticker: str, field: str, func: Callable[[str, str, Any], None]):
-    try:
-        binder = SUBSCRIPTION_BINDINGS[ticker, field]
-    except KeyError:
-        return
-    binder.unbind(func)
-
-
-def binding_counts(sort_desc: bool = None) -> Dict[str, int]:
-    def unpack():
-        for (tkr, fld), binder in SUBSCRIPTION_BINDINGS.items():
-            yield len(binder.bindings), f'{tkr}@{fld}'
-
-    if sort_desc is None:
-        return {k: v for v, k in unpack()}
-    return {k: v for v, k in sorted(list(unpack()), reverse=sort_desc)}
-
-
-def hit_counts(sort_desc: bool = None) -> Dict[str, int]:
-    def unpack():
-        for (tkr, fld), binder in SUBSCRIPTION_BINDINGS.items():
-            yield binder.hit_count, f'{tkr}@{fld}'
-
-    if sort_desc is None:
-        return {k: v for v, k in unpack()}
-    return {k: v for v, k in sorted(list(unpack()), reverse=sort_desc)}
-
-
-def _dispatch(raw: Dict[str, Any]):
-    try:
-        data: MarketData = raw['newValue']
-        op: str = raw['operation']
-        key: str = raw['key']
-    except KeyError:
-        logger.error(raw)  # debug raw
-        raise
-    if data.error:
-        raise BpipeError(data.security, data.error)
-
-    if op == 'INSERT':
-        ticker: str = data.security
-        if isinstance(data.field_values, dict):  # field_values sometimes can be an empty list
-            for field, value in data.field_values.items():
-                try:
-                    binder = SUBSCRIPTION_BINDINGS[ticker, field]
-                except KeyError:
-                    binder = SUBSCRIPTION_BINDINGS[ticker, field] = Binder()
-                binder(ticker, field, value)
-
-        if key != ticker:
-            logger.warning(f'inconsistent key={key!r} vs security={ticker!r}')
-    else:
-        logger.warning(f'skipping unknown operation {op!r}')
-
-
-__plasma_threads: Dict[str, threading.Thread] = {}
-__plasma_switches: Set[int] = set()
-_counter = count().__next__
-_counter()
-
-
-def subscribe(
-        securities: List[str],
-        fields: List[str],
-        force: bool = False,
-        thread: str = None,
-        plasma_client: PlasmaClient = None,
-) -> None:
-    if plasma_client is None:
-        plasma_client = get_plasma()
-    if thread is None:
-        thread = 'Default'
-
-    _thread = __plasma_threads.get(thread)
-    if isinstance(_thread, threading.Thread) and _thread.is_alive():
-        if not force:
-            raise RuntimeError(f'plasma thread {thread!r} is already running ...')
-        else:
-            __plasma_switches.discard(_thread.ident)
-
-    def f(raw: Dict[str, Any]):
-        if threading.get_ident() not in __plasma_switches:
-            raise StopIteration
-        _dispatch(raw)
-
-    def _run():
-        __plasma_switches.add(threading.get_ident())
-        try:
-            plasma_client.bloomberg.consume(f, securities=securities, field_list=fields, timeout=5)
-        except StopIteration:
-            _name = threading.current_thread().name
-            logger.info(f'plasma thread {_name!r} has stopped!')
-        except GrpcConnectionError:
-            _name = threading.current_thread().name
-            logger.warning(f'plasma thread {_name!r} stopped due to connection closed.')
-        except Exception as e:
-            _name = threading.current_thread().name
-            logger.error(f'plasma thread {_name!r} stopped due to unexpected error', exc_info=e)
-
-    thread_name = f'BPipe-{thread}'
-    if thread in __plasma_threads:  # create a unique thread name for debugging
-        thread_name += f'-{_counter()}'
-
-    __plasma_threads[thread] = _thread = threading.Thread(target=_run, name=thread_name)
-    _thread.start()
-    logger.info(f'plasma thread {thread_name!r} is now running ...')
-
-
-ALL_THREADS = 'ALL_THREADS'
-
-
-def kill(thread: str, wait: bool = True):
-    if thread == ALL_THREADS:
-        __plasma_switches.clear()
-        if wait:
-            for t in __plasma_threads.values():
-                t.join()
-        return
-
-    _thread = __plasma_threads[thread]
-    if isinstance(_thread, threading.Thread) and _thread.is_alive():
-        __plasma_switches.discard(_thread.ident)
-        if wait:
-            _thread.join()
-    else:
-        logger.info(f'plasma thread {thread!r} has already stopped ...')
-
-
-def is_alive(thread: str) -> bool:
-    _thread = __plasma_threads.get(thread)
-    return isinstance(_thread, threading.Thread) and _thread.is_alive()
-
-
-def is_healthy() -> bool:
-    return bool(__plasma_threads) and all(is_alive(i) for i in __plasma_threads)
-
-
-def shutdown(plasma_client: PlasmaClient = None):
-    if plasma_client is None:
-        plasma_client = get_plasma()
-    plasma_client.shutdown()
-
-
-def target(plasma_client: PlasmaClient = None) -> str:
-    if plasma_client is None:
-        plasma_client = get_plasma()
-    # noinspection PyUnresolvedReferences
-    channel = plasma_client.bloomberg.channel if atom_version >= 3 else plasma_client.market_data.channel
-    for attr in ['_channel', '_channel']:
-        channel = getattr(channel, attr)
-    return channel.target().decode()
+        if tickers:
+            if limit:
+                assert isinstance(limit, int) and limit > 0
+                tickers = set(list(tickers)[:limit])
+            for (tkr, fld), val in BondIssue.pull(tickers=tickers, fields=set(columns), session=sess).items():
+                raw.setdefault(tkr, {})[fld] = val
+
+    frame = pandas.DataFrame(raw).T
+    if len(frame):
+        frame.reset_index(inplace=True)
+        columns.update({'index': 'TICKER'})
+        frame.rename(columns, axis=1, inplace=True)
+        if currency_conversion:
+            frame = pandas.concat([frame, _currency_conversion(frame, currency=currency_conversion)], axis=1)
+    return frame
+
+
+class CountryAlias:
+    EUR = {'AT', 'BE', 'CY', 'DE', 'ES', 'FI', 'FR', 'GR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SK'}
+    GBP = {'GB'}
+    AUD = {'AU'}
+    NZD = {'NZ'}
+    CAD = {'CA'}
+    SEK = {'SE'}
+    JPY = {'JP'}
+    HKD = {'HK'}
+    SGD = {'SG'}
+    USD = {'US'}
+    NOK = {'NO'}
+    CHF = {'CH'}
+
+
+DEFAULT_TICKER_FILEPATH = r'.tmp/bond_issue/tickers.csv'
+
+
+def main():
+    print('---------- checking new tickers to push ----------')
+    tkr_frame = pandas.read_csv(os.getenv('TICKER_FILEPATH') or DEFAULT_TICKER_FILEPATH, header=[0, 1])
+    existing_tickers = BondIssue.find_tickers()
+    new_tickers = set()
+    for currency in sorted(set(tkr_frame.columns.get_level_values(0))):
+        tickers = {j for _, i in tkr_frame[currency].items() for j in i.dropna()} - existing_tickers
+        print(currency, len(tickers))
+        new_tickers.update(tickers)
+    if new_tickers:
+        for idx, tkr_col in tkr_frame.items():
+            tickers = set(tkr_col.dropna()) & new_tickers
+            if tickers:
+                print(f'---------- pushing {idx} ----------')
+                BondIssue.push_from_bpipe(tickers)
+    print('---------- all done ----------')
 
 
 if __name__ == '__main__':
     pass
+    import sylo.config.config
+
+    try:
+        sylo.config.config.init_config()
+        main()
+    except Exception as exc:
+        logger.error('', exc_info=exc)
+        input('press enter to exit ...')

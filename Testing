@@ -1,188 +1,117 @@
 import datetime
+import logging
 import os
-from dataclasses import dataclass
+from typing import Sequence
 
-import pandas as pd
-import numpy as np
-from typing import Union
+import nbformat
+from nbconvert import HTMLExporter
+from nbconvert.preprocessors import ExecutePreprocessor
 
-from syfi.syfi_utils import dateadd
-from sylo.mdp import BPipeMarketDataProvider
+from sylo.com import email
 
-ACCURACY = 1e-10
+logger = logging.getLogger(__name__)
+NOTEBOOK_EXT = '.ipynb'
+IMPORT_DIR = os.path.join(os.path.dirname(__file__), 'notebooks')
+EXPORT_DIR = os.path.join(os.path.dirname(__file__), 'exported')
 
-bbg_data_provider = BPipeMarketDataProvider()
+
+def export_ipynb_to_html(filename: str, import_dir: str = None, export_dir: str = None, export_filename: str = None,
+                         timestamp: str = '%Y%m%dT%H%M') -> str:
+    if not filename.endswith(NOTEBOOK_EXT):
+        raise ValueError(f'invalid file extension "{filename}"')
+    run_timestamp = datetime.datetime.now()
+
+    if import_dir is None:
+        import_dir = os.getenv('NOTEBOOKS_IMPORT_DIR', IMPORT_DIR)
+    with open(os.path.join(import_dir, filename), 'r') as f:
+        nb = nbformat.read(f, as_version=4)
+
+    ep = ExecutePreprocessor(timeout=-1, kernel_name='python3')
+    ep.preprocess(nb)
+
+    html_exporter = HTMLExporter()
+    html_exporter.exclude_input = True
+    html, _ = html_exporter.from_notebook_node(nb)
+
+    if export_dir is None:
+        export_dir = os.getenv('NOTEBOOKS_EXPORT_DIR', EXPORT_DIR)
+    if not os.path.exists(export_dir):
+        if os.path.dirname(export_dir) != os.path.dirname(__file__):
+            raise FileNotFoundError(f'No such directory: "{export_dir}"')
+        os.mkdir(export_dir)
+    if export_filename is None:
+        export_filename = filename[:-len(NOTEBOOK_EXT)] + '_{}.html'
+    if timestamp:
+        export_filename = export_filename.format(run_timestamp.strftime(timestamp))
+    export_path = os.path.join(export_dir, export_filename)
+    logger.info(f'exporting to "{export_path}"')
+    with open(export_path, "w", encoding='utf-8') as f:
+        f.write(html)
+    return export_path
 
 
-@dataclass
-class StratStops:
-    stops_in_k: float = None
-    trade_name: str = None
-    start_date: datetime.date = None
-    end_date: datetime.date = None
-    pnl_folder: str = None
-    bbg_function: str = None
+def export_to_email(filepaths: Sequence[str] = None, timestamp: str = '%Y-%m-%d'):
+    if filepaths and all(map(os.path.exists, filepaths)):
+        to_addresses = os.getenv('NOTEBOOKS_EXPORT_EMAIL_TO')
+        subject = os.getenv('NOTEBOOKS_EXPORT_EMAIL_SUBJECT')
+        if to_addresses:
+            if subject and timestamp:
+                subject = subject.format(datetime.datetime.now().strftime(timestamp))
+            email.send_email(
+                subject=subject,
+                from_addr=os.getenv('NOTEBOOKS_EXPORT_EMAIL_FROM'),
+                to_addrs=to_addresses,
+                cc_addrs=os.getenv('NOTEBOOKS_EXPORT_EMAIL_CC'),
+                bcc_addrs=os.getenv('NOTEBOOKS_EXPORT_EMAIL_BCC'),
+                attachments=filepaths,
+            )
 
-    def __post_init__(self):
-        self.data = self.get_pnl_series()
 
-    def get_pnl_series(self) -> pd.DataFrame:
-        assert self.trade_name is not None, "can't find trade name"
-        assert self.pnl_folder is not None, "can't find folder name"
+def main():
+    import_dir = os.getenv('NOTEBOOKS_IMPORT_DIR', IMPORT_DIR)
+    import_filename = os.getenv('NOTEBOOK_IMPORT_FILENAME')
+    export_filename = os.getenv('NOTEBOOK_EXPORT_FILENAME')
 
-        file_location: str = os.path.join(self.pnl_folder, self.trade_name + '.csv')
-        data = pd.read_csv(file_location, header=[0], index_col=0, parse_dates=True, dayfirst=True).dropna(how='all')
-
-        if (self.start_date is not None) and (self.end_date is not None):
-            return data.loc[self.start_date:self.end_date, "PV Live"]
-
-        return data[['PV Live']]
-
-    def find_peak_pnl_date(self,
-                           column_name: str) -> datetime.date:
-        data = self.get_pnl_series()
-        return data[column_name].idxmax().to_pydatetime().date()
-
-    def find_peak_pnl(self,
-                      column_name: str) -> float:
-        data = self.get_pnl_series()
-        return data.loc[data[column_name].idxmax()][column_name]
-
-    def calc_stop_level(self, fast_ma_window: int = 5,
-                        slow_ma_window: int = 50,
-                        slope_window: int = 10,
-                        non_neg_stop_flag: bool = True,
-                        return_df: bool = False,
-                        add_init_buffer: bool = False,
-                        init_buffer_pct: float = 0) -> Union[np.ndarray, pd.DataFrame]:
-        df = self.data.copy(deep=True)
-
-        if isinstance(df.index[0], datetime.datetime):
-            df.index = list(map(lambda x: x.date(), df.index))
-
-        BIG = 10e10
-        TINY = 10e-8
-
-        if add_init_buffer:
-            assert (init_buffer_pct >= -ACCURACY) and (init_buffer_pct <= 1 + ACCURACY), \
-                "init_buffer_pct msut be in [0,1]"
-            df.loc[dateadd(df.index[0], '-1d', True, 'HKD')] = init_buffer_pct * self.stops_in_k
-            df = df.sort_index()
-
-        fast_ma = df.rolling(window=fast_ma_window, min_periods=0).mean()
-        slow_ma = df.rolling(window=slow_ma_window, min_periods=0).mean()
-
-        if isinstance(fast_ma, pd.Series):
-            fast_ma = fast_ma.to_frame("fast_ma")
-        else:
-            fast_ma.columns = ['fast_ma']
-        if isinstance(slow_ma, pd.Series):
-            slow_ma = slow_ma.to_frame("slow_ma")
-        else:
-            slow_ma.columns = ['slow_ma']
-
-        slope = slow_ma - slow_ma.shift(slope_window)
-        slope.iloc[:slope_window] = slow_ma.iloc[:slope_window] - slow_ma.iloc[0].values
-
-        slope = slope / slope.cummax()
-        running_max = fast_ma.cummax()
-        drawdown = running_max - fast_ma
-
-        max_drawdown = -BIG
-        reset_id_list = []
-        trough_id_list = []
-        stop_level_list = []
-        fast_ma_trough_list = []
-        slow_ma_support_list = []
-        slope_adj_list = []
-        max_drawdown_id = 0
-
-        index = df.index
-
-        for i in range(len(drawdown)):
-            if np.isnan(drawdown.iloc[i].values[0]):
+    def unpack():
+        for filename in os.listdir(import_dir):
+            if import_filename and filename != import_filename:
                 continue
+            elif filename.endswith(NOTEBOOK_EXT):
+                while True:
+                    try:
+                        yield export_ipynb_to_html(filename=filename, import_dir=import_dir,
+                                                   export_filename=export_filename)
+                        break
+                    except OSError as e:
+                        logger.error('', exc_info=e)
+                        if input('do you want to retry? (y/n)').lower() != 'y':
+                            break
 
-            if drawdown.iloc[i].values[0] > max_drawdown:
-                max_drawdown = drawdown.iloc[i].values[0]
+    export_to_email(list(unpack()))
 
-                max_drawdown_id = i
-            if i > 0 and drawdown.iloc[i - 1].values[0] > TINY > drawdown.iloc[i].values[0]:
-                reset_id_list.append(i)
-                trough_id_list.append(max_drawdown_id)
-                blending_coeff = max(slope.iloc[max_drawdown_id].values[0], 0.0)
-                lower_bound = min(slow_ma.iloc[max_drawdown_id].values[0], fast_ma.iloc[max_drawdown_id].values[0])
-                upper_bound = max(slow_ma.iloc[max_drawdown_id].values[0], fast_ma.iloc[max_drawdown_id].values[0])
-                stop_level = blending_coeff * lower_bound + (1 - blending_coeff) * upper_bound
-                stop_level_list.append(stop_level)
-                slow_ma_support_list.append(slow_ma.iloc[max_drawdown_id].values[0])
-                fast_ma_trough_list.append(fast_ma.iloc[max_drawdown_id].values[0])
-                slope_adj_list.append(blending_coeff)
 
-                max_drawdown = -BIG
+def backfill_main():
+    date_str1, date_str2 = os.environ['REF_DATE_RANGE'].split('_')
+    date1 = datetime.date.today() if date_str1 == 'TODAY' else datetime.datetime.strptime(date_str1, '%Y-%m-%d').date()
+    date2 = datetime.date.today() if date_str2 == 'TODAY' else datetime.datetime.strptime(date_str2, '%Y-%m-%d').date()
+    start_date, end_date = min(date1, date2), max(date1, date2)
+    date_exclude = os.getenv('REF_DATE_EXCLUDE', '')
+    while end_date >= start_date:
+        if end_date.weekday() < 5 and end_date.isoformat() not in date_exclude:
+            os.environ['REF_DATE'] = end_date.isoformat()
+            main()
+        end_date -= datetime.timedelta(days=1)
 
-        if len(reset_id_list) == 0:
-            fast_ma_level = fast_ma.iloc[-1].values[0]
-            stop_level = self.stops_in_k
-            pnl_trough = df.min()
-            pnl_trough_date = pd.to_datetime(df.idxmin())
-            slow_ma_support = ""
-            slope_adj = ""
-            high_watermark = df.max()
-            high_watermark_date = pd.to_datetime(df.idxmax())
+
+if __name__ == '__main__':
+    from app.config.config import init_config
+
+    try:
+        init_config()
+        if 'REF_DATE_RANGE' in os.environ:
+            backfill_main()
         else:
-            fast_ma_level = fast_ma.iloc[-1].values[0]
-            stop_level = np.max(stop_level_list[-1])
-            pnl_trough = fast_ma_trough_list[-1]
-            pnl_trough_date = pd.to_datetime(index[trough_id_list[-1]])
-            slow_ma_support = slow_ma_support_list[-1]
-            slope_adj = slope_adj_list[-1]
-            high_watermark = df.max()
-            high_watermark_date = pd.to_datetime(df.idxmax())
-
-        if non_neg_stop_flag:
-            stop_final = stop_level if stop_level > 0 else self.stops_in_k
-        else:
-            stop_final = stop_level
-
-        if return_df:
-            stop_level_series = pd.DataFrame(data=[np.nan] * len(df), columns=['stop_level'], index=index)
-            stop_level_series.loc[index[0], 'stop_level'] = self.stops_in_k
-            stop_level_series.loc[index[reset_id_list], 'stop_level'] = np.array(stop_level_list)
-            stop_level_series = stop_level_series.fillna(method='ffill')
-            stop_level_series = stop_level_series.cummax()
-
-            if non_neg_stop_flag:
-                stop_level_series = stop_level_series.applymap(lambda x: x if x > 0 else self.stops_in_k)
-
-            result_df = pd.concat([df, fast_ma, slow_ma, stop_level_series], axis=1)
-            result_df.columns = ['pv', 'fast_ma', 'slow_ma', 'stop_level']
-
-            if add_init_buffer:
-                return result_df.iloc[1:]
-            else:
-                return result_df
-        else:
-            stats_df = pd.Series(
-                {"Fast MA": fast_ma_level,
-                 "Stop Level": stop_final,
-                 "PnL Trough": pnl_trough,
-                 "PnL Trough Date": pnl_trough_date,
-                 "High PnL": high_watermark,
-                 "High PnL Date": high_watermark_date,
-                 "Slow MA Support": slow_ma_support,
-                 "Slope Adj": slope_adj,
-                 }).to_frame().T
-
-            return stats_df.values
-
-
-if __name__ == "__main__":
-    stop_obj = StratStops(stops_in_k=-500,
-                          trade_name="sys_1",
-                          pnl_folder=r'G:\BFAM_FO\Systematic\Data Storage\Strategy_Level_PnL\discretionary')
-    test_df = stop_obj.calc_stop_level(fast_ma_window=1,
-                                       slow_ma_window=5,
-                                       slope_window=10,
-                                       non_neg_stop_flag=True,
-                                       return_df=True)
+            main()
+    except Exception as exc:
+        logger.error('', exc_info=exc)
+        input('press enter to exit ...')

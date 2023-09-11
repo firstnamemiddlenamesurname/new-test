@@ -1,0 +1,47 @@
+C3 =SUMIFS(INDEX(folio,,5),INDEX(folio,,7),"="&$B3,INDEX(folio,,9),"="&C$2)+SUMIFS(INDEX(trade,,3),INDEX(trade,,4),"="&$B3,INDEX(trade,,2),"="&C$2,INDEX(trade,,6),"=buy")-SUMIFS(INDEX(trade,,3),INDEX(trade,,4),"="&$B3,INDEX(trade,,2),"="&C$2,INDEX(trade,,6),"=sell")+@IF(C$1,IF($B3=VLOOKUP(C$2,$O$3:$T$12,2,FALSE),SUMIFS(INDEX(trade,,3),INDEX(trade,,4),"="&VLOOKUP(C$2,$O$3:$T$12,6,FALSE),INDEX(trade,,2),"="&C$2,INDEX(trade,,6),"=buy")-SUMIFS(INDEX(trade,,3),INDEX(trade,,4),"="&VLOOKUP(C$2,$O$3:$T$12,6,FALSE),INDEX(trade,,2),"="&C$2,INDEX(trade,,6),"=sell"),IF($B3=VLOOKUP(C$2,$O$3:$T$12,6,FALSE),-SUMIFS(INDEX(trade,,3),INDEX(trade,,4),"="&VLOOKUP(C$2,$O$3:$T$12,6,FALSE),INDEX(trade,,2),"="&C$2,INDEX(trade,,6),"=buy")+SUMIFS(INDEX(trade,,3),INDEX(trade,,4),"="&VLOOKUP(C$2,$O$3:$T$12,6,FALSE),INDEX(trade,,2),"="&C$2,INDEX(trade,,6),"=sell"),0)),0)+C36
+
+
+AC2
+
+Strategy	fx_spot_1
+Link	'[Portfolio Overview.xlsm]fx_spot_1'!
+Folio	$A$42:$AE$615
+Trade	$F$7:$Q$25
+Ref Date	2022/07/15
+
+O2
+=systematic_fx_settle_dt(Q1)
+
+O15
+
+=systematic_fx_settle_dt(Q14)
+
+
+B1
+TRUE				TRUE	TRUE	TRUE	TRUE		TRUE	
+End	CNH	IDR	INR	KRW	MXN	SGD	THB	TRY	TWD	ZAR	 
+
+B3
+
+2022/07/18
+
+
+formatting rule:
+
+=$C$3:$M$32
+
+=$B3=OFFSET($P$2,MATCH(C$2,$O$3:$O$12,0),0) : orange
+
+=$B3=OFFSET($Q$2,MATCH(C$2,$O$3:$O$12,0),0): yellow
+
+=$B3=OFFSET($T$2,MATCH(C$2,$O$3:$O$12,0),0) : dark green
+
+=$B3=OFFSET($S$2,MATCH(C$2,$O$3:$O$12,0),0): light green
+
+=$B3=OFFSET($R$2,MATCH(C$2,$O$3:$O$12,0),0): light green
+
+
+=$V$3:$Y$12:
+
+=V3<V16: orange
+=V3>V16: green

@@ -1,0 +1,1664 @@
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\strategies\xccy\bt_xccy.py
+----------------------------------------
+from functools import lru_cache
+import backtrader as bt
+import pandas as pd
+import numpy as np
+import datetime as dt
+from systematic.strategies.ccyswap_meanreversion import derivedata as dd, bt_xccy_functions as xcf
+from tools.backtrader import bt_generic as btg
+from systematic.strategies.ccyswap_meanreversion import weights as wgt
+
+BACK_TEST_CACHE = dd.STRATEGY_FOLDER + 'BT/'
+
+strat_params = {'reload': False}
+
+
+@lru_cache()
+def get_commission_info(ccy):
+    ci = bt.CommissionInfo(
+        commission=dd.cost_by_ccy(ccy) / 2.0,
+        commtype=bt.CommInfoBase.COMM_FIXED,
+        margin=1e-4,
+        stocklike=True)
+    return ci
+
+
+# %% running each currency separately
+# for loop
+
+# all_output = {}
+# for tdb in dd.CURS:
+#     prices, instruments = xcf.get_all_strat_data(reduce=True, tdb=tdb)
+#     # sel_columns = ['adj_size', 'trd_prc', 'close', 'open',
+#     #                'entry', 'expy', 'vol', 'range']
+#     sel_columns = ['adj_size', 'close', 'open',
+#                    'entry', 'expy', 'vol', 'range']
+#     strat_data = prices.loc[:, sel_columns]
+#     commissions = {tpl: get_commission_info(tpl[1])
+#                    for tpl in instruments.itertuples(index=False, name=None)}
+#     res2 = btg.bt_parallel_run_all(xcf.XCcy_Strat,
+#                                    strat_data,
+#                                    instruments,
+#                                    commissions,
+#                                    strat_params=strat_params,
+#                                    check_cache=True,
+#                                    cache_path=BACK_TEST_CACHE,
+#                                    cheat_on_close=True)
+#     all_output[tdb] = res2
+#
+#
+# pnls = [pd.Series(data=all_output[ccy]['pnl'].loc[:, 'pnl'].copy(), name=ccy)
+#         for ccy in all_output]
+# totals = pd.concat(pnls, axis=1)
+# totals['total'] = totals.sum(axis=1)
+# totals.sort_index(inplace=True)
+#
+#
+# # %% run everything together
+# prices, instruments = xcf.get_all_strat_data(reduce=False)
+# sel_columns = ['adj_size', 'close', 'open',
+#                'entry', 'expy', 'vol', 'range']
+# strat_data = prices.loc[:, sel_columns]
+#
+#
+# commissions = {tpl: get_commission_info(tpl[1])
+#                for tpl in instruments.itertuples(index=False, name=None)}
+#
+# res = btg.bt_run_all(xcf.XCcy_Strat,
+#                      strat_data,
+#                      instruments,
+#                      commissions,
+#                      strat_params=strat_params,
+#                      check_cache=True,
+#                      cache_path=BACK_TEST_CACHE,
+#                      cheat_on_close=True)
+
+
+# %% parallel run
+
+def bt_xccy_backtest():
+    prices, instruments, reloads = xcf.get_all_strat_data(reduce=False,
+                                                          double_down=True)
+    if reloads is not None:
+        xccy_rawdata = xcf.get_xccy_raw_data()
+        for cur in dd.CURS:
+            for tdb in dd.TRADABLES:
+                try:
+                    xccy_rawdata.loc[:, (cur, tdb.replace('1y', '3m'))] = \
+                        1 / 4 * xccy_rawdata.loc[:, (cur, tdb)] + 3 / 4 * xccy_rawdata.loc[:, (cur, dd.INTER_MAP[tdb])]
+                except KeyError:
+                    continue
+        reloads = reloads.rename(columns={"dd_shift": "shift", "reload_trigger_from": "trade_inception_date",
+                                          "inception_date": "reload_trigger_date", "reload": "reload_size"})
+        reloads = reloads[~reloads.ccy.isin(['HKD', 'CAD'])]
+        reloads['shift'] = reloads['shift'] * reloads.reload_size
+        reloads.loc[:, 'trade_size'] = reloads.adj_size * reloads.reload_size * 1 / len(dd.TRADABLES) / 1e3
+        reloads = reloads.drop(columns=['adj_size'])
+        reloads.loc[:, 'sign'] = np.sign(reloads.trade_size)
+        reloads.loc[:, '1y_fwd_at_inception'] = \
+            reloads.apply(lambda x: xccy_rawdata.loc[x.trade_inception_date, (x.ccy, x.tradable)], axis=1)
+        reloads.loc[:, '1y_fwd_trigger_lvl'] = reloads['1y_fwd_at_inception'] - reloads['shift'] * reloads.sign
+        reloads.loc[:, '1y_fwd_at_trigger'] = reloads.apply(lambda x: xccy_rawdata.loc[x.reload_trigger_date,
+                                                                                       (x.ccy, x.tradable)], axis=1)
+        reloads.tradable = reloads.tradable.str.replace('1y', '3m')
+        reloads.loc[:, '3m_fwd_at_trigger'] = reloads.apply(lambda x: xccy_rawdata.loc[x.reload_trigger_date,
+                                                                                       (x.ccy, x.tradable)], axis=1)
+        reloads.to_csv(r'G:\BFAM_FO\Systematic\Data Storage\Strategies\ccyswap_reload\\reloads.csv', index=False)
+
+    sel_columns = ['adj_size', 'close', 'open',
+                   'entry', 'expy', 'vol', 'range']
+    strat_data = prices.loc[:, sel_columns]
+
+    commissions = {tpl: get_commission_info(tpl[1])
+                   for tpl in instruments.itertuples(index=False, name=None)}
+
+    res2 = btg.bt_parallel_run_all(xcf.XCcy_Strat,
+                                   strat_data,
+                                   instruments,
+                                   commissions,
+                                   strat_params=strat_params,
+                                   check_cache=True,
+                                   cache_path=BACK_TEST_CACHE,
+                                   cheat_on_close=True)
+    pd.to_pickle(res2, dd.STRATEGY_FOLDER + 'bt_results\\res_cache.pkl')
+
+    tdb_agg_all = []
+    all_trades = res2['positions_value'].drop(columns=['cash']).copy()
+    for tdb in dd.TRADABLES:
+        columns = list(filter(lambda x: x.rsplit('_')[2] == tdb, all_trades.columns))
+        tdb_pnl = all_trades[columns].replace(0, np.nan).ffill().fillna(0).copy()
+        tdb_pnl_agg = tdb_pnl.sum(axis=1)
+        tdb_agg_all.append(tdb_pnl_agg)
+    tdb_agg_pnl = pd.concat(tdb_agg_all, axis=1) / 1e3
+    tdb_agg_pnl.columns = dd.TRADABLES
+    tdb_agg_pnl.to_csv(dd.STRATEGY_FOLDER + "tradable\\pnl_aggregate.csv")
+    tdb_agg_daily_pnl = tdb_agg_pnl.diff()
+    tdb_agg_daily_pnl.to_csv(dd.STRATEGY_FOLDER + "tradable\\pnl_aggregate_dailypnl.csv")
+
+
+def run_ccyswap_strategy():
+    dd.data_updater()
+    print("done updating data")
+    dd.generate_historical_features()
+    print("done generating features")
+    bt_xccy_backtest()
+    print("done running backtest")
+    wgt.run_weights()
+    print("done running weights")
+    dd.aggregate_pnl_with_weights()
+    print("done aggregating pnl with weights")
+
+    date_today = pd.to_datetime(dt.date.today())
+    trade_array = dd.xccy_mr_trade_rec(date_today)
+    print("recommendations for today")
+    print(trade_array)
+    print('ccyswap meanreversion done')
+
+
+# %%
+
+def check_results():
+    prices, instruments, reloads = xcf.get_all_strat_data(reduce=False,
+                                                          double_down=True)
+    sel_columns = ['adj_size', 'close', 'open',
+                   'entry', 'expy', 'vol', 'range']
+    strat_data = prices.loc[:, sel_columns]
+
+    commissions = {tpl: get_commission_info(tpl[1])
+                   for tpl in instruments.itertuples(index=False, name=None)}
+
+    res2 = btg.bt_parallel_run_all(xcf.XCcy_Strat,
+                                   strat_data,
+                                   instruments,
+                                   commissions,
+                                   strat_params=strat_params,
+                                   check_cache=True,
+                                   cache_path=BACK_TEST_CACHE,
+                                   cheat_on_close=True)
+
+    trades = res2['trade_list']
+    closed_trades = trades.loc[~trades.date_close.isin([0])]
+    cnts = closed_trades.groupby('date_open').net_pnl.sum()
+    od_pnl = closed_trades.groupby('date_open').net_pnl.sum()
+    od_cnts = closed_trades.groupby('date_open').net_pnl.count()
+    rod_pnl = od_pnl.rolling(window=15, min_periods=0).mean()
+    rod_cnt = od_cnts.rolling(window=15, min_periods=0).mean()
+    rod_pnl.plot(grid=True)
+    rod_cnt.plot(grid=True, secondary_y=True)
+    rod_pnl.corr(rod_cnt)
+    dfs = pd.concat([rod_pnl, rod_cnt], axis=1)
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\strategies\xccy\bt_xccy_function.py
+----------------------------------------
+import os
+import datetime as dt
+from functools import lru_cache
+
+# from joblib import Parallel, delayed
+import mmh3
+import cloudpickle as cpk
+import numpy as np
+import pandas as pd
+from pandas.tseries.offsets import BDay
+import backtrader as bt
+
+from systematic.strategies.ccyswap_meanreversion import derivedata as dd
+
+# from strategies.ccyswap_meanreversion import weights as wgt
+
+BACK_TEST_CACHE = dd.STRATEGY_FOLDER + "BT\\"
+
+_shift_floors = {
+    'EUR': 7.0,
+    'GBP': 10.0,
+    'AUD': 8.0,
+    'JPY': 8.0,
+    'CAD': 4.0,
+    'NZD': 9.0,
+    'SEK': 6.0,
+    'HKD': 10.0,
+    'ZAR': 20.0,
+    'SGD': 10.0,
+    'PLN': 12.0,
+    'HUF': 12.0,
+    'KRW': 8.0}
+
+
+# %% raw data
+
+def get_features():
+    features_df = pd.read_csv(dd.STRATEGY_FOLDER + 'features_aggregate.csv',
+                              index_col=0, parse_dates=True,
+                              dayfirst=True, header=[0, 1])
+    features_df = features_df.loc[dd.BT_START_DT:, :]
+    features_df.sort_index(inplace=True)
+    return features_df
+
+
+def get_xccy_raw_data():
+    xccy_file_path = dd.STRATEGY_FOLDER + "ccyswaps_rates.csv"
+    xccy_rawdata = pd.read_csv(xccy_file_path, index_col=0,
+                               parse_dates=True, dayfirst=True,
+                               header=[0, 1])
+    xccy_rawdata.sort_index(inplace=True)
+    xccy_rawdata.ffill(inplace=True)
+    return xccy_rawdata
+
+
+# %% cost functions
+
+@lru_cache()
+def get_cost_series():
+    cost_dict = {
+        # ccy, bid-ask spread, size
+        "EUR": 1.0,  # 50
+        "GBP": 1.0,  # 50
+        "AUD": 1.0,  # 50
+        "JPY": 1.0,  # 50
+        "CAD": 4.0,  # 25
+        "NZD": 3.0,  # 25
+        "SEK": 3.0,  # 25
+        "HKD": 3.0,  # 25
+        "ZAR": 4.0,  # 25
+        "SGD": 4.0,  # 25
+        "PLN": 3.0,  # 10
+        "HUF": 5.0,  # 10
+        "KRW": 10.0,  # 10
+    }
+    cost_series = pd.Series(cost_dict)
+    cost_series.name = 'cost'
+    cost_series.index.name = 'ccy'
+    return cost_series
+
+
+@lru_cache()
+def get_cost_ccy(ccy):
+    cost_series = get_cost_series()
+    return cost_series.loc[ccy]
+
+
+# %% build strat data
+
+def merge_m(ccy, tradable, signals_df, prc_data,
+            check_cache=False,
+            cache_path=BACK_TEST_CACHE):
+    if check_cache:
+        h1 = mmh3.hash(cpk.dumps(signals_df))
+        h2 = mmh3.hash(cpk.dumps(prc_data))
+        fname = cache_path + f'strat_data/{ccy}/{tradable}/{h1}_{h2}.p'
+        if os.path.exists(fname):
+            with open(fname, 'rb') as ofile:
+                res = cpk.load(ofile)
+            return res
+    try:
+        txz = signals_df.loc[(slice(None), [ccy], [tradable]), :]
+    except KeyError:
+        return None
+    if txz is None or txz.shape[0] == 0:
+        return None
+    try:
+        tpd = prc_data.loc[([ccy], [tradable], slice(None)), :]
+    except KeyError:
+        return None
+    if tpd is None or tpd.shape[0] == 0:
+        return None
+    prc = txz.join(tpd, how='outer')
+    prc.reset_index(inplace=True)
+    prc = prc.loc[(prc.fwd_start_date >= prc.asofdate) &
+                  (prc.inception_date <= prc.asofdate)]
+    prc['scaler'] = (prc.asofdate - prc.inception_date).dt.days / 365.0
+    prc['close'] = (prc.fwd * (1 - prc.scaler)) + prc.spot * prc.scaler
+    prc['open'] = (prc.fwd * (1 - 1 / 365.0)) + prc.close / 365.0
+    prc['entry'] = np.where(prc.inception_date == prc.asofdate,
+                            1.0,
+                            0.0)
+    prc['expy'] = np.where(prc.fwd_start_date <= prc.asofdate,
+                           1.0,
+                           0.0)
+    prc = prc.join(get_cost_series(), on='ccy')
+    prc.set_index(['inception_date', 'ccy', 'tradable', 'asofdate'],
+                  inplace=True)
+    prc.sort_index(inplace=True)
+    prc.drop(columns=['spot_t', 'fwd_start_date'], inplace=True)
+    if check_cache:
+        if not os.path.exists(fname):
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+        with open(fname, 'wb') as ofile:
+            cpk.dump(prc, ofile)
+    return prc
+
+
+def merge_m2(inception_date, signals_df, prc_data,
+             check_cache=True,
+             cache_path=BACK_TEST_CACHE):
+    txz = signals_df.loc[(slice(inception_date, inception_date),
+                          slice(None),
+                          slice(None)), :]
+    if txz is None or txz.shape[0] == 0:
+        return None
+    tpd = prc_data.loc[(slice(None),
+                        slice(None),
+                        slice(inception_date,
+                              txz.fwd_start_date.max() + dt.timedelta(days=1))
+                        ),
+          :]
+    if tpd is None or tpd.shape[0] == 0:
+        return None
+    if check_cache:
+        h1 = mmh3.hash(cpk.dumps(txz))
+        h2 = mmh3.hash(cpk.dumps(tpd))
+        fname = cache_path + f'strat_data/{inception_date.strftime("%Y/%m/%d")}/{h1}_{h2}.p'
+        if os.path.exists(fname):
+            with open(fname, 'rb') as ofile:
+                res = cpk.load(ofile)
+            return res
+    prc = txz.join(tpd, how='left')
+    prc.reset_index(inplace=True)
+    prc = prc.loc[(prc.fwd_start_date >= prc.asofdate) &
+                  (prc.inception_date <= prc.asofdate)]
+    prc['scaler'] = (prc.asofdate - prc.inception_date).dt.days / 365.0
+    prc['close'] = (prc.fwd * (1 - prc.scaler)) + prc.spot * prc.scaler
+    prc['open'] = (prc.fwd * (1 - 1 / 365)) + prc.close * 1 / 365
+    prc['entry'] = np.where(prc.inception_date == prc.asofdate,
+                            1.0,
+                            0.0)
+    prc['expy'] = np.where(prc.fwd_start_date <= prc.asofdate,
+                           1.0,
+                           0.0)
+    prc = prc.join(get_cost_series(), on='ccy')
+    prc.set_index(['inception_date', 'ccy', 'tradable', 'asofdate'],
+                  inplace=True)
+    prc.sort_index(inplace=True)
+    prc.drop(columns=['spot_t', 'fwd_start_date'], inplace=True)
+    if check_cache:
+        if not os.path.exists(fname):
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+        with open(fname, 'wb') as ofile:
+            cpk.dump(prc, ofile)
+    return prc
+
+
+def get_all_strat_data(xccy_rawdata='',
+                       features_df='',
+                       size_mult=1e3,
+                       reduce=False,
+                       tdb='',
+                       double_down=True
+                       ):
+    # take close data only
+    mdt = dt.datetime.today()
+    xccy_rawdata = get_xccy_raw_data() if xccy_rawdata == '' else xccy_rawdata
+    features_df = get_features() if features_df == '' else features_df
+    xccy_rawdata = xccy_rawdata.loc[:(mdt - dt.timedelta(days=1))]
+    features_df = features_df.loc[:(mdt - dt.timedelta(days=1))]
+    features_df.drop(features_df.index[-1], inplace=True)
+    features_df = features_df.loc[features_df.index.dayofweek == 4, :]
+    xccy_std_df = xccy_rawdata.diff().rolling(dd.REAL_VOL_WINDOW).std(ddof=0)
+    xccy_stp_df = xccy_rawdata.rolling(dd.REAL_VOL_WINDOW).std(ddof=0)
+
+    xrd = xccy_rawdata.stack(level=0).stack(level=0)  # .swaplevel(i=0,j=2)
+    xsd = xccy_std_df.stack(level=0).stack(level=0)  # .swaplevel(i=0,j=2)
+    xsp = xccy_stp_df.stack(level=0).stack(level=0)
+
+    xrd.sort_index(inplace=True)
+    xsd.sort_index(inplace=True)
+    xsp.sort_index(inplace=True)
+
+    if reduce:
+        univ = (slice(None), [tdb], slice(None))
+        # univ = (slice(None), slice(None), [tdb, dd.INTER_MAP[tdb]])
+        xrd = xrd.loc[univ]
+        xsd = xsd.loc[univ]
+        xsp = xsp.loc[univ]
+    tradable_features = features_df.copy()
+    tradable_features.fillna(0.0, inplace=True)
+    tfdf = tradable_features.stack(level=0).stack(level=0)
+    # .swaplevel(i=0,j=2)
+    tfdf.index.names = ['signal_date', 'ccy', 'tradable']
+    tfdf.name = 'signal'
+    tfdf = (tfdf / 2).round(0).apply(np.sign)
+    sel_tfdf = tfdf.loc[tfdf.abs() >= 1]
+    xsz = (1 / xsd.loc[sel_tfdf.index.intersection(xsd.index)]).clip(upper=1.0)
+    x_size = sel_tfdf.loc[xsz.index].apply(np.sign) * xsz * dd.FREQ * size_mult
+    x_size.index.names = ['signal_date', 'ccy', 'tradable']
+    x_size.name = 'o_size'
+    xsz_df = x_size.to_frame()
+    # xsz_df['vol'] = xsp.loc[xsz_df.index].round(3)
+    xsz_df.reset_index(inplace=True)
+    xsz_df.tradable = xsz_df.tradable.astype('category')
+    xsz_df['inception_date'] = xsz_df.signal_date + BDay(1)
+    xsz_df['adj_size'] = xsz_df.apply(
+        lambda x: x.o_size * dd.RISK_PROFILE[x.ccy], axis=1)
+    # xsz_df['fwd_start_date'] = xsz_df.inception_date + dt.timedelta(days=365)
+    fwd_series = xrd.loc[(slice(None), slice(None), dd.TRADABLES)].copy()
+    xsz_df['fwd_start_date'] = xsz_df.apply(
+        lambda x: xccy_rawdata.loc[
+                  (x.inception_date + dt.timedelta(days=365)):
+                  ].index[0] if (x.inception_date + dt.timedelta(days=365)) <
+                                xccy_rawdata.index[-1] else x.inception_date + dt.timedelta(days=365),
+        axis=1)
+    spot_series = xrd.loc[(slice(None),
+                           slice(None),
+                           [dd.INTER_MAP[trd] for trd in dd.TRADABLES]
+                           )].copy()
+    fwd_series.index.names = ['asofdate', 'ccy', 'tradable']
+    spot_series.index.names = ['asofdate', 'ccy', 'spot_t']
+    fwd_series.name = 'fwd'
+    spot_series.name = 'spot'
+
+    fwds = fwd_series.to_frame()
+    fwds.reset_index(inplace=True)
+    spots = spot_series.to_frame()
+    spots.reset_index(inplace=True)
+    fwds.ccy = fwds.ccy.astype('category')
+    fwds.tradable = fwds.tradable.astype('category')
+    spots.ccy = spots.ccy.astype('category')
+    spots.spot_t = spots.spot_t.astype('category')
+    fwds['spot_t'] = fwds.apply(lambda x: dd.INTER_MAP[x.tradable], axis=1)
+    prc_data = fwds.join(spots.set_index(['ccy', 'spot_t', 'asofdate']),
+                         on=['ccy', 'spot_t', 'asofdate'])
+    # pairs = xsz_df.loc[:,
+    #                    ['ccy', 'tradable']].drop_duplicates().sort_values(
+    #                        by=['ccy', 'tradable'])
+    instruments = xsz_df.loc[:,
+                  ['inception_date', 'ccy', 'tradable']
+                  ].drop_duplicates().sort_values(
+        by=['ccy', 'tradable', 'inception_date'])
+    xsz_df.set_index(['inception_date', 'ccy', 'tradable'], inplace=True)
+    xsz_df['vol'] = xsp.loc[xsz_df.index]
+    prc_data.set_index(['ccy', 'tradable', 'asofdate'], inplace=True)
+    xsz_df.sort_index(inplace=True)
+    prc_data.sort_index(inplace=True)
+    prc_data['rr'] = (prc_data.fwd - prc_data.spot).abs()
+    prc_data['range'] = prc_data.groupby(
+        ['ccy', 'tradable']).rr.transform(lambda x: x.rolling(252).mean())
+    xsz_df['trd_prc'] = fwds.set_index(
+        ['asofdate', 'ccy', 'tradable']).loc[xsz_df.index, 'fwd']
+    # prices = pd.concat(
+    #     [merge_m2(inception_date, xsz_df, prc_data)
+    #      for inception_date in xsz_df.index.get_level_values(0).unique()],
+    #     axis=0)
+    prices = pd.concat(
+        [merge_m(ccy, tradable, xsz_df, prc_data)
+         for ccy in xsz_df.index.get_level_values(1).unique()
+         for tradable in xsz_df.index.get_level_values(2).unique()],
+        axis=0)
+    prices.sort_index(inplace=True)
+    rld = None
+    if double_down:
+        trading_dates = prices.loc[prices.entry == 1.0].index.get_level_values(3)
+        prices_short = prices.loc[(pd.IndexSlice[(dd.RL_START_DT - dt.timedelta(365)):],
+                                   slice(None), slice(None)), :].copy()
+        prices_short.loc[:, 'dd_shift'] = prices_short.apply(
+            lambda x: max([x.range, 2 * x.vol,
+                           _shift_floors[x.name[1]]]), axis=1)
+        prices_short['mv'] = (prices_short.fwd - prices_short.trd_prc) * np.sign(prices_short.o_size)
+        prices_short['reload'] = np.where(
+            prices_short.mv < 2 * - prices_short.dd_shift,
+            2.0,
+            np.where(prices_short.mv < -prices_short.dd_shift, 1.0, 0.0))
+        reloads = prices_short.loc[
+                  (slice(None), slice(None), slice(None), trading_dates), :
+                  ].loc[
+            prices_short.reload.isin([1.0, 2.0])].reset_index().groupby(
+            by=['inception_date', 'ccy', 'tradable', 'reload']).asofdate.min()
+        if not reloads.empty:
+            reloads_ix = reloads.reset_index().set_index(
+                ['inception_date', 'ccy', 'tradable', 'asofdate'])
+            prc_rl = prices_short.loc[reloads_ix.index, ['adj_size', 'dd_shift', 'reload']]
+            prc_rl = prc_rl.reset_index().rename(columns={
+                'inception_date': 'reload_trigger_from',
+                'asofdate': 'inception_date'})
+            prc_rl.set_index(['inception_date', 'ccy', 'tradable'], inplace=True)
+            prc_rl.sort_index(level=['inception_date', 'ccy', 'tradable'],
+                              inplace=True)
+            rld = prc_rl.reset_index()
+
+        # prices['dd_shift'] = prices.apply(
+        #     lambda x: 2 * max([x.range,
+        #                        2 * x.vol,
+        #                        _shift_floors[x.name[1]]]), axis=1)
+        # prices['mv'] = (prices.fwd - prices.trd_prc) * np.sign(prices.o_size)
+        # prices['reload'] = np.where(
+        #     prices.mv < 2 * - prices.dd_shift,
+        #     2.0,
+        #     np.where(prices.mv < -prices.dd_shift, 1.0, 0.0))
+        # reloads = prices.loc[
+        #     (slice(None), slice(None), slice(None), trading_dates), :
+        #     ].loc[
+        #         prices.reload.isin([1.0, 2.0])].reset_index().groupby(
+        #         by=['inception_date', 'ccy', 'tradable', 'reload']).asofdate.min()
+        # reloads_ix = reloads.reset_index().set_index(
+        #     ['inception_date', 'ccy', 'tradable', 'asofdate'])
+        # prc_rl = prices.loc[reloads_ix.index, ['o_size', 'adj_size']]
+        # prc_rl = prc_rl.reset_index().rename(columns={
+        #     'inception_date': 'reload_trigger_from',
+        #     'asofdate': 'inception_date'})
+        # prc_rl.set_index(['inception_date', 'ccy', 'tradable'], inplace=True)
+        # prc_rl.sort_index(level=['inception_date', 'ccy', 'tradable'],
+        #                   inplace=True)
+        # prices['reload_inc'] = prices.index.get_level_values(0)
+        # rld = pd.merge_asof(left=prc_rl, right=prices.reload_inc,
+        #                     by=['ccy', 'tradable'],
+        #                     on='inception_date',
+        #                     allow_exact_matches=True,
+        #                     direction='forward')
+        # rld.rename(columns={
+        #     'inception_date': 'matching_date',
+        #     'reload_inc': 'inception_date',
+        #     }, inplace=True)
+        # rld['asofdate'] = rld.inception_date
+        # grld = rld.groupby(['inception_date', 'ccy', 'tradable', 'asofdate'],
+        #                    sort=True).sum()
+        # tots = grld + prices.loc[grld.index, grld.columns]
+        # prices.loc[grld.index, grld.columns] = tots
+        # prices.drop(columns=['reload_inc', 'mv', 'reload', 'dd_shift'],
+        #             inplace=True)
+    prices = prices.round({
+        'close': 2,
+        'open': 2,
+        'scaler': 4,
+        'fwd': 2,
+        'trd_prc': 2,
+        'spot': 2,
+        'range': 2,
+    })
+    prices['comms'] = prices.cost / 2.0 * prices.adj_size.abs() * (prices.expy + prices.entry)
+    return prices, instruments, rld
+
+
+def manual_pnl(prices):
+    unrealized = prices.groupby('asofdate').unrealized.sum()
+    cash = prices.groupby('asofdate').cash.sum().cumsum()
+    comms = prices.groupby('asofdate').comms.sum().cumsum()
+    tot_pnl = pd.concat([unrealized, cash, comms], axis=1)
+    tot_pnl['PnL'] = tot_pnl.unrealized + tot_pnl.cash - tot_pnl.comms
+    tot_pnl['Daily'] = tot_pnl.PnL.diff()
+    tot_pnl['draw_down'] = tot_pnl.PnL - tot_pnl.PnL.cummax()
+    tot_pnl['max_dd'] = tot_pnl.draw_down.cummin()
+    tot_pnl['PnL_yearly'] = tot_pnl.PnL.diff(252)
+    tot_pnl.PnL_yearly = np.where(tot_pnl.PnL_yearly.isna(),
+                                  tot_pnl.PnL,
+                                  tot_pnl.PnL_yearly)
+    return tot_pnl
+
+
+# %% Strategy Class
+
+class XCcy_Strat(bt.Strategy):
+    params = dict(
+        dd_size=1.0,
+        dd_factor=2.0,
+        stop_factor=2.0,
+        stop_loss=False,
+        verbose=False,
+        reload=True)
+
+    def __init__(self):
+        self.ord_hist = list()
+        self.trade_list = list()
+        self.expired = list()
+        # print(self.p.start_date, 'to', self.p.end_date)
+
+    def prenext(self):
+        self.next()
+
+    def stop(self):
+        return
+
+    def notify_order(self, order):
+        if not order.status == order.Completed:
+            if self.p.verbose:
+                odc = order.created
+                desc = f'created {order.data._name} {order.exectype}'
+                desc += f'sts:{order.status} sz:{odc.size} prc:{odc.price}'
+                print(desc)
+            return
+        odc = order.created
+        ode = order.executed
+        ex_bits = order.executed.exbits
+        ex_price = None
+        if ex_bits:
+            tot_size = sum([eb.size for eb in ex_bits])
+            tot_amount = sum([eb.size * eb.price for eb in ex_bits])
+            ex_price = tot_amount / tot_size
+        self.ord_hist.append(
+            {
+                'date': bt.num2date(ode.dt),
+                'creation_date': bt.num2date(odc.dt),
+                'inst': order.data._name,
+                'asize': ode.size,
+                'price': odc.price,
+                'exec_price': ode.price,
+                'eb_price': ex_price,
+                'comms': ode.comm,
+            })
+        if not self.p.verbose:
+            return
+        if order.isbuy():
+            desc = f'buy {order.data._name} {order.exectype}'
+        else:
+            desc = f'sell {order.data._name} {order.exectype}'
+        desc += f' dt:{bt.num2date(ode.dt).strftime("%Y-%m-%d")}'
+        desc += f' sz:{odc.size} prc:{odc.price} pre:{ode.price}'
+        desc += f' comm:{ode.comm} pl:{round(ode.pnl, 0)}, opsz:{ode.psize}'
+        print(desc)
+
+    def notify_trade(self, trd):
+        # if not trd.isclosed:
+        #     return
+        if self.p.verbose:
+            desc = f'{trd.ref}{trd.status} {trd.size} {trd.price}'
+            desc += f'{trd.value} {trd.commission} {trd.pnl} {trd.isclosed}'
+            desc += f' {bt.num2date(trd.dtopen)} {bt.num2date(trd.dtclose)}'
+            print(desc)
+        dt_close = bt.num2date(trd.dtclose) if trd.dtclose > 0 else trd.dtclose
+        self.trade_list.append(
+            {
+                'date_open': bt.num2date(trd.dtopen),
+                'inst': trd.data._name,
+                'date_close': dt_close,
+                'ref': trd.ref,
+                'status': trd.status,
+                'trade_id': trd.tradeid,
+                'size': trd.size,
+                'price': trd.price,
+                'value': trd.value,
+                'comms': trd.commission,
+                'pnl': trd.pnl,
+                'net_pnl': trd.pnlcomm,
+            })
+        return
+
+    def next(self):
+        for i, d in enumerate(self.datas):
+            # if len(d):
+            dn = d._name
+            cdt = self.datetime.date()
+            if self.p.verbose:
+                desc = f'work on {dn} at {cdt} pos:{self.getposition(d).size}'
+                desc += f'entry:{d.entry[0]} expy:{d.expy[0]}'
+                print(desc)
+            # pos = self.getposition(d).size
+            if dn in self.expired:
+                continue
+            if (d.expy[0] > 0.0):  # and (self.getposition(d).size != 0):
+                self.close(data=d,
+                           # price=d.close[0]
+                           )
+                self.expired.append(dn)
+            if d.entry[0] > 0.0:
+                limit_shift = max([d.range[0],
+                                   2 * d.vol[0],
+                                   _shift_floors[dn.split('_')[1]]])
+                stop_shift = self.p.stop_factor * limit_shift
+                dd_shift = self.p.dd_factor * limit_shift
+                adj_size = d.adj_size[0]
+                clse = d.close[0]
+                if adj_size > 0:
+                    self.buy(
+                        exectype=bt.Order.Market,
+                        data=d,
+                        size=adj_size,
+                        # price=clse,
+                    )
+                    if self.p.reload:
+                        self.buy(
+                            data=d,
+                            size=self.p.dd_size * adj_size,
+                            exectype=bt.Order.Limit,
+                            price=clse - dd_shift)
+                        self.buy(
+                            data=d,
+                            size=self.p.dd_size * adj_size,
+                            exectype=bt.Order.Limit,
+                            price=clse - 2 * dd_shift)
+                    if self.p.stop_loss:
+                        self.sell(
+                            data=d,
+                            size=0.5 * adj_size,
+                            exectype=bt.Order.Stop,
+                            price=clse - stop_shift)
+                        self.sell(
+                            data=d,
+                            size=0.5 * adj_size,
+                            exectype=bt.Order.Stop,
+                            price=clse - 2 * stop_shift)
+                if adj_size < 0:
+                    self.sell(
+                        exectype=bt.Order.Market,
+                        data=d,
+                        size=abs(adj_size),
+                        # price=clse,
+                    )
+                    if self.p.reload:
+                        self.sell(
+                            data=d,
+                            size=self.p.dd_size * abs(adj_size),
+                            exectype=bt.Order.Limit,
+                            price=clse + dd_shift)
+                        self.sell(
+                            data=d,
+                            size=self.p.dd_size * abs(adj_size),
+                            exectype=bt.Order.Limit,
+                            price=clse + 2 * dd_shift)
+                    if self.p.stop_loss:
+                        self.buy(
+                            data=d,
+                            size=0.5 * abs(adj_size),
+                            exectype=bt.Order.Stop,
+                            price=d.close[0] + stop_shift)
+                        self.buy(
+                            data=d,
+                            size=0.5 * abs(adj_size),
+                            exectype=bt.Order.Stop,
+                            price=clse + 2 * stop_shift)
+
+        # dtm = round(time.time() - start_time, 2)
+        # self.dtimes.append({
+        #     'date': dt,
+        #     'duration': dtm})
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\strategies\xccy\derivedata.py
+----------------------------------------
+import pandas as pd
+import datetime as dt
+import numpy as np
+from sylo.com.bpipe import bdh
+from systematic.strategies.ccyswap_meanreversion.weights import run_weights
+from pandas.tseries.offsets import BDay
+
+RELOAD_WEIGHT = 5
+CURS = ["EUR", "GBP", "AUD", "JPY", "CAD", "NZD", "SEK", "ZAR", "SGD", "HKD"]
+TENORS = ["3m", "2y", "3y", "5y", "6y", "10y", "11y", "1y2y", "1y5y", "1y10y"]
+IRS_TS = ["2y", "5y", "10y"]
+FWDS = ["1y2y", "1y5y", "1y10y", "1y2y-1y5y", "1y2y-1y10y", "1y5y-1y10y"]
+SPOTS = ["2y", "5y", "10y", "2y-5y", "2y-10y", "5y-10y"]
+TRADABLES = FWDS
+PIP_FACTOR = {"EUR": 1e4, "GBP": 1e4, "JPY": 1e2, "AUD": 1e4, "KWN": 1,
+              "ZAR": 1e4, "SAR": 1e4, "NZD": 1e4, "CAD": 1e4, "SEK": 1e4,
+              "HKD": 1e4, "SGD": 1e4, "ILS": 1e4, 'TRY': 1e4, 'THB': 1e2,
+              'CNH': 1e4, "RUB": 1e4, "PLN": 1e4, "HUF": 1e2}
+DATA_FOLDER = r"G:/BFAM_FO/Systematic/Data Storage/Historical monitor vol"
+STRATEGY_FOLDER = r"G:/BFAM_FO/Systematic/Data Storage/Strategies/ccyswap_meanreversion//"
+RISK_PROFILE = {'EUR': 1.0, 'GBP': 1.0, 'AUD': 1.0, 'JPY': 1.0, 'CAD': 1.0,
+                'NZD': 1.0, 'SEK': 1.0, 'HKD': 1.0, 'ZAR': 0.5, 'SGD': 1.0}
+INTER_MAP = {"1y2y": "2y", "1y5y": "5y", "1y10y": "10y", "1y2y-1y5y": "2y-5y", "1y2y-1y10y": "2y-10y",
+             "1y5y-1y10y": "5y-10y"}
+FWD_MAP = {"1y2y": "1y", "1y5y": "1y", "1y10y": "1y", "1y2y-1y5y": "1y", "1y2y-1y10y": "1y", "1y5y-1y10y": "1y"}
+BT_START_DT = dt.datetime(2009, 1, 1)
+RL_START_DT = dt.datetime(2020, 7, 27)
+REAL_VOL_WINDOW = 252
+FREQ = 5
+SHORT_W = 252
+LONG_W = 252 * 5
+IM_YIELD_W = 21 * 3
+DELAY = 1
+base_mapping = {
+    'AUD': 'ADBSQQ',
+    'CAD': 'CDXSQQ',
+    'NZD': 'NDBSQQ',
+    'GBP': 'BPXOQQ',
+    'EUR': 'EUXOQQ',
+    'JPY': 'JYBSS',
+    'SGD': 'SDSF6',
+    'SEK': 'SKXOQQ',  # SEK-USD basis, note also
+    'SAR': 'SRUSSW',
+    'HKD': 'HISOQ',
+    'KRW': 'KRWSSQ',
+    'ZAR': 'SAJSQQ',
+    'HUF': 'HFEBS',  # Incorrect, HFEBS is HUF-EUR basis, HUF-USD basis doesn't exist
+    'MXN': 'MPBS',
+    'CLP': 'CHUSBS',
+    'TRY': 'TYBS',
+    'RUB': 'RRBS',
+    'RON': 'RNEUBS',  # Incorrect, RNEUBS is RON-EUR basis, RON-USD basis doesn't exist
+    'ILS': 'ISBS',
+}
+
+suffix = {
+    'AUD': '',
+    'CAD': '',
+    'NZD': '',
+    'GBP': '',
+    'EUR': '',
+    'JPY': 'Y',
+    'SGD': 'Y',
+    'SEK': '',
+    'SAR': '',
+    'HKD': '',
+    'KRW': '',
+    'ZAR': '',
+    'HUF': '',
+    'MXN': '',
+    'CLP': '',
+    'TRY': '',
+    'RUB': '',
+    'RON': '',
+    'ILS': '',
+}
+
+# change made on 28/07/2022 by Adel
+old_base_mapping = {
+    'AUD': 'ADBS',
+    'CAD': 'CDBS',
+    'NZD': 'NDBS',
+    'GBP': 'BPBS',
+    'EUR': 'EUBS',
+    'JPY': 'JYBS',
+    'SGD': 'SDBS',
+    'SEK': 'SKBS',  # SEK-USD basis, note also
+    'SAR': 'SRUSSW',
+    'HKD': 'HDBS',
+    'KRW': 'KRBS',
+    'ZAR': 'SABS',
+    'HUF': 'HFEBS',  # Incorrect, HFEBS is HUF-EUR basis, HUF-USD basis doesn't exist
+    'MXN': 'MPBS',
+    'CLP': 'CHUSBS',
+    'TRY': 'TYBS',
+    'RUB': 'RRBS',
+    'RON': 'RNEUBS',  # Incorrect, RNEUBS is RON-EUR basis, RON-USD basis doesn't exist
+    'ILS': 'ISBS',
+}
+
+old_irs_tickers = {
+    "EUSA2 CMPN Curncy": ("EUR", "2y"),
+    "EUSA5 CMPN Curncy": ("EUR", "5y"),
+    "EUSA10 CMPN Curncy": ("EUR", "10y"),
+    "ADSWAP10 CMPN Curncy": ("AUD", "10y"),
+    "ADSWAP2Q CMPN Curncy": ("AUD", "2y"),
+    "ADSWAP5 CMPN Curncy": ("AUD", "5y"),
+    "BPSW10 CMPN Curncy": ("GBP", "10y"),
+    "BPSW5 CMPN Curncy": ("GBP", "5y"),
+    "BPSW2 CMPN Curncy": ("GBP", "2y"),
+    "JYSW10 CMPN Curncy": ("JPY", "10y"),
+    "JYSW5 CMPN Curncy": ("JPY", "5y"),
+    "JYSW2 CMPN Curncy": ("JPY", "2y"),
+    "USSWAP10 CMPN Curncy": ("USD", "10y"),
+    "USSWAP5 CMPN Curncy": ("USD", "5y"),
+    "USSWAP2 CMPN Curncy": ("USD", "2y"),
+}
+
+
+def cost_by_ccy(ccy):
+    _cost = {
+        # ccy, bid-ask spread, size
+        "EUR": 1.0,  # 50
+        "GBP": 1.0,  # 50
+        "AUD": 1.0,  # 50
+        "JPY": 1.0,  # 50
+        "CAD": 4.0,  # 25
+        "NZD": 3.0,  # 25
+        "SEK": 3.0,  # 25
+        "HKD": 3.0,  # 25
+        "ZAR": 4.0,  # 25
+        "SGD": 4.0,  # 25
+        "PLN": 3.0,  # 10
+        "HUF": 5.0,  # 10
+        "KRW": 10.0,  # 10
+    }
+    return _cost[ccy]
+
+
+def get_sign_features(feature_tickers):
+    """
+    :param feature_tickers: input feature tickers
+    :type: str
+    :return: array-like,
+    :type: consist of -1 and 1, to restrict the sign of the features' coefficients,
+    the output sign is flipped, e.g. `fwd basket zscore` is expected to be negatived
+    correlated with the forward returns, but the output is 1.
+    Note:
+    -----
+    WARNING: the output sign is FLIPPED, e.g. `fwd basket zscore` is expected to be
+    negatived correlated with the forward returns, but the output is 1.
+    """
+    assert isinstance(feature_tickers, list)
+
+    # normalized features must support multiple look back window size
+    def aux(x):
+        if 'carry stability' in x or 'carry basket zscore' in x:
+            return -1
+        elif 'fwd basket zscore' in x or 'fwd level basket zscore' in x:
+            return 1
+        elif 'fwd aged basket zscore' in x or 'fwd aged level basket zscore' in x:
+            return 1
+        elif 'carry basket' == x:
+            return -1
+        elif 'carry sharpe' in x:
+            return 1
+        elif 'yield diff basket' == x:
+            return -1
+        elif 'implied yield diff basket' == x:
+            return 1  # implied yield diff believed to be negatively correlated with the future return
+        elif 'implied yield diff basket zscore' in x:
+            return 1  # inverse compared with the implied yield diff
+        elif 'yield diff basket zscore' in x:
+            return -1  # inverse compared with the yield diff basket
+        else:
+            raise ValueError(f'Feature name cannot be {x} !')
+
+    return [aux(x) for x in feature_tickers]
+
+
+# description of features
+# 1-zscore on fwd levels 1y window
+# 2-zscore on fwd levels 5y window
+# 5-carry stability 1y window:  carrystability1y = carrytopay / rolling1ystad(carrytopay)
+# 6-carry stability 5y window:  carrystability5y = carrytopay / rolling5ystad(carrytopay)
+# 7-carry sharpe 1y window:  carrysharpe1y = (fwdlevel-spotlevel)/ rolling1ystd(fwdlevel)
+# 8-carry sharpe 5y window:  carrysharpe5y =  (fwdlevel-spotlevel) / rolling5ystd(fwdlevel)
+# 9-zscore on implied yield diff 1y window: for the 1y2y: 3y-2y then 1y-3m over 1y period
+# 10-zscore on implied yield diff 5y window
+# 11-aged zscore 1y window: agedzscore1y = (fwdlevel - rolling1ymean(spotlevel))/rolling1ystd(spotlevel)
+# 12-aged zscore 5y window: agedzscore5y = (fwdlevel - rolling5ymean(spotlevel))/rolling5ystd(spotlevel)
+
+def generate_historical_features():
+    xccy_file_path = STRATEGY_FOLDER + "ccyswaps_rates.csv"
+    xccy_rawdata = pd.read_csv(xccy_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    xccy_rawdata.sort_index(inplace=True)
+    xccy_rawdata.ffill(inplace=True)
+    # take close data only
+    xccy_rawdata = xccy_rawdata.loc[:(dt.datetime.today() - dt.timedelta(days=1))]
+
+    irs_file_path = STRATEGY_FOLDER + "irs_rates.csv"
+    irs_rawdata = pd.read_csv(irs_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    irs_rawdata.sort_index(inplace=True)
+    irs_rawdata.ffill(inplace=True)
+    irs_rawdata = irs_rawdata.reindex(xccy_rawdata.index)
+
+    fxspot_file_path = STRATEGY_FOLDER + "fxspot_rates.csv"
+    fxspot_rawdata = pd.read_csv(fxspot_file_path, index_col=0, parse_dates=True, dayfirst=True)
+    fxspot_rawdata.sort_index(inplace=True)
+    fxspot_rawdata.ffill(inplace=True)
+    fxspot_rawdata = fxspot_rawdata.reindex(xccy_rawdata.index)
+
+    fxpoints_file_path = STRATEGY_FOLDER + "fxpoints_rates.csv"
+    fxpoints_rawdata = pd.read_csv(fxpoints_file_path, index_col=0, parse_dates=True, dayfirst=True)
+    fxpoints_rawdata.sort_index(inplace=True)
+    fxpoints_rawdata.ffill(inplace=True)
+    fxpoints_rawdata = fxpoints_rawdata.reindex(xccy_rawdata.index)
+
+    # 1-zscore on fwd levels 1y window
+    fwdlevelsdata = xccy_rawdata.loc[:, (slice(None), FWDS)]
+    zscoredata1_mean = fwdlevelsdata.rolling(SHORT_W).mean()
+    zscoredata1_std = fwdlevelsdata.rolling(SHORT_W).std(ddof=0)
+    zscoredata1 = (fwdlevelsdata - zscoredata1_mean) / zscoredata1_std
+    feature_1 = zscoredata1
+    feature_1.columns = [list(map(lambda x: x[0], feature_1.columns)), list(map(lambda x: x[1], feature_1.columns)),
+                         ["fwd level basket zscore 252"] * len(feature_1.columns)]
+
+    # 2-zscore on fwd levels 5y window
+    zscoredata2_mean = fwdlevelsdata.rolling(LONG_W).mean()
+    zscoredata2_std = fwdlevelsdata.rolling(LONG_W).std(ddof=0)
+    zscoredata2 = (fwdlevelsdata - zscoredata2_mean) / zscoredata2_std
+    feature_2 = zscoredata2
+    feature_2.columns = [list(map(lambda x: x[0], feature_2.columns)), list(map(lambda x: x[1], feature_2.columns)),
+                         ["fwd level basket zscore 1260"] * len(feature_2.columns)]
+
+    # Carry Calculation
+    # Carry Calculation
+    currencies_in_file = np.unique(np.array([col[0] for col in xccy_rawdata.columns])).tolist()
+    xccy_rawdata_nofil = pd.read_csv(xccy_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    xccy_rawdata_nofil.sort_index(inplace=True)
+    xccy_rawdata_nofil = xccy_rawdata_nofil.loc[:(dt.datetime.today() - dt.timedelta(days=1))]
+    carry_df = pd.DataFrame()
+    for cur in currencies_in_file:
+        cur_df = xccy_rawdata_nofil[cur]
+        for tenor in [3, 6, 11]:
+
+            if (str(tenor) + "y") in cur_df.columns:
+                base_tenor = "3m" if "3m" in cur_df.columns else "1y"
+                series = (cur_df[str(tenor) + "y"] - cur_df[base_tenor] + (cur_df[str(tenor) + "y"]
+                                                                           - cur_df[str(tenor - 1) + "y"]) / (
+                                  tenor - (tenor - 1)) * (tenor - 1)) / tenor * (-1)
+                current_df = series.to_frame()
+                current_df.columns = [[cur], ["1y" + str(tenor - 1) + "y"]]
+                carry_df = pd.concat([carry_df, current_df], axis=1)
+        carry_df.loc[:, (cur, "1y2y-1y5y")] = carry_df[cur]["1y2y"] - carry_df[cur]["1y5y"]
+        if (cur, "1y10y") in carry_df.columns:
+            carry_df.loc[:, (cur, "1y2y-1y10y")] = carry_df[cur]["1y2y"] - carry_df[cur]["1y10y"]
+            carry_df.loc[:, (cur, "1y5y-1y10y")] = carry_df[cur]["1y5y"] - carry_df[cur]["1y10y"]
+    carry_df.to_csv(STRATEGY_FOLDER + "carry_raw.csv")
+    carry_df.ffill(inplace=True)
+
+    # 5-carry stability 1y window:  carrystability1y = carrytopay / rolling1ystd(carrytopay)
+    carrydata1_std = carry_df.rolling(SHORT_W).std(ddof=0)
+    feature_5 = carry_df / carrydata1_std
+    feature_5.columns = [list(map(lambda x: x[0], feature_5.columns)), list(map(lambda x: x[1], feature_5.columns)),
+                         ["carry basket zscore 252"] * len(feature_5.columns)]
+
+    # 6-carry stability 5y window:  carrystability5y = carrytopay / rolling5ystd(carrytopay)
+    carrydata2_std = carry_df.rolling(LONG_W).std(ddof=0)
+    feature_6 = carry_df / carrydata2_std
+    feature_6.columns = [list(map(lambda x: x[0], feature_6.columns)), list(map(lambda x: x[1], feature_6.columns)),
+                         ["carry basket zscore 1260"] * len(feature_6.columns)]
+
+    # 7-carry sharpe 1y window:  carrysharpe1y = (fwdlevel-spotlevel)/ rolling1ystd(fwdlevel)
+    spotlevelsdata = xccy_rawdata.loc[:, (slice(None), SPOTS)]
+    first_column_layer = list(map(lambda x: x[0], spotlevelsdata.columns))
+    second_column_layer = list(map(lambda x: '-'.join(list(map(lambda y: "1y" + y, x[1].rsplit("-")))),
+                                   spotlevelsdata.columns))
+    spotlevelsdata.columns = [first_column_layer, second_column_layer]
+    stddevfwdlevel = fwdlevelsdata.rolling(SHORT_W).std(ddof=0)
+    feature_7 = (fwdlevelsdata - spotlevelsdata) / stddevfwdlevel
+    feature_7.columns = [list(map(lambda x: x[0], feature_7.columns)), list(map(lambda x: x[1], feature_7.columns)),
+                         ["carry sharpe 252"] * len(feature_7.columns)]
+
+    # 8-carry sharpe 5y window:  carrysharpe5y =  (fwdlevel-spotlevel) / rolling5ystd(fwdlevel)
+    stddevfwdlevel = fwdlevelsdata.rolling(LONG_W).std(ddof=0)
+    feature_8 = (fwdlevelsdata - spotlevelsdata) / stddevfwdlevel
+    feature_8.columns = [list(map(lambda x: x[0], feature_8.columns)), list(map(lambda x: x[1], feature_8.columns)),
+                         ["carry sharpe 1260"] * len(feature_8.columns)]
+
+    # implied yield differential calculation
+    yield_diff_df = pd.DataFrame()
+    for cur in ["EUR", "AUD", "JPY", "GBP"]:
+        for tenor in [2, 5, 10]:
+            implied_yield_series = fxpoints_rawdata[cur] / PIP_FACTOR[cur] / fxspot_rawdata[cur] * (-1)
+            if cur == "JPY":
+                implied_yield_series = implied_yield_series * -1
+            implied_yield_series.ffill(inplace=True)
+            implied_yield_series = implied_yield_series.rolling(IM_YIELD_W).mean()
+            yield_diff_series = (irs_rawdata[cur][str(tenor) + "y"] - irs_rawdata["USD"][str(tenor) + "y"]) * 100 + \
+                                xccy_rawdata[cur][str(tenor) + "y"] - implied_yield_series * 10000 * (252 / IM_YIELD_W)
+            yield_diff_series.ffill(inplace=True)
+            current_yield_diff_df = yield_diff_series.to_frame()
+            current_yield_diff_df.columns = [(cur, "1y" + str(tenor) + "y")]
+            yield_diff_df = pd.concat([yield_diff_df, current_yield_diff_df], axis=1)
+        yield_diff_df[(cur, "1y2y-1y5y")] = yield_diff_df[(cur, "1y2y")] - yield_diff_df[(cur, "1y5y")]
+        yield_diff_df[(cur, "1y2y-1y10y")] = yield_diff_df[(cur, "1y2y")] - yield_diff_df[(cur, "1y10y")]
+        yield_diff_df[(cur, "1y5y-1y10y")] = yield_diff_df[(cur, "1y5y")] - yield_diff_df[(cur, "1y10y")]
+    yield_diff_df.columns = [list(map(lambda x: x[0], yield_diff_df.columns)),
+                             list(map(lambda x: x[1], yield_diff_df.columns))]
+    yield_diff_df.to_csv(STRATEGY_FOLDER + "yield_diff_raw.csv")
+
+    # 9-zsore on implied yield diff 1y window
+    yielddiffdata1_mean = yield_diff_df.rolling(SHORT_W).mean()
+    yielddiffdata1_std = yield_diff_df.rolling(SHORT_W).std(ddof=0)
+    feature_9 = (yield_diff_df - yielddiffdata1_mean) / yielddiffdata1_std
+    feature_9.columns = [list(map(lambda x: x[0], feature_9.columns)), list(map(lambda x: x[1], feature_9.columns)),
+                         ["implied yield diff basket zscore 252"] * len(feature_9.columns)]
+
+    # 10-Zscore on implied yield diff 5y window
+    yielddiffdata2_mean = yield_diff_df.rolling(LONG_W).mean()
+    yielddiffdata2_std = yield_diff_df.rolling(LONG_W).std(ddof=0)
+    feature_10 = (yield_diff_df - yielddiffdata2_mean) / yielddiffdata2_std
+    feature_10.columns = [list(map(lambda x: x[0], feature_10.columns)), list(map(lambda x: x[1], feature_10.columns)),
+                          ["implied yield diff basket zscore 1260"] * len(feature_10.columns)]
+
+    # 11-aged zscore 1y window: agedzscore1y = (fwdlevel - rolling1ymean(spotlevel))/rolling1ystd(spotlevel)
+    stddevspotlevel = spotlevelsdata.rolling(SHORT_W).std(ddof=0)
+    feature_11 = (fwdlevelsdata - spotlevelsdata.rolling(SHORT_W).mean()) / stddevspotlevel
+    feature_11.columns = [list(map(lambda x: x[0], feature_11.columns)), list(map(lambda x: x[1], feature_11.columns)),
+                          ["fwd aged level basket zscore 252"] * len(feature_11.columns)]
+
+    # 12-aged zscore 1y window: agedzscore1y = (fwdlevel - rolling1ymean(spotlevel))/rolling1ystd(spotlevel)
+    stddevspotlevel = spotlevelsdata.rolling(LONG_W).std(ddof=0)
+    feature_12 = (fwdlevelsdata - spotlevelsdata.rolling(LONG_W).mean()) / stddevspotlevel
+    feature_12.columns = [list(map(lambda x: x[0], feature_12.columns)), list(map(lambda x: x[1], feature_12.columns)),
+                          ["fwd aged level basket zscore 1260"] * len(feature_12.columns)]
+
+    # aggregate features
+    all_features = pd.concat([feature_1, feature_2, feature_5, feature_6, feature_7, feature_8, feature_9, feature_10,
+                              feature_11, feature_12], axis=1)
+    curs = list(map(lambda x: x[0], all_features.columns))
+    aggregate_df = pd.DataFrame()
+    for cur in np.unique(np.array(curs)).tolist():
+        for tenor in np.unique(np.array(list(map(lambda x: x[0], all_features[cur].columns)))).tolist():
+            current_df = all_features[cur][tenor]
+            current_df = get_sign_features(current_df.columns.tolist()) * current_df * -1
+            current_df_copy = current_df.copy()
+            current_df_copy.columns = pd.MultiIndex.from_product([[cur], [tenor], current_df_copy.columns])
+            all_features.loc[:, (cur, tenor, slice(None))] = current_df_copy
+            features_aggregate = current_df.mean(axis=1)
+            features_aggregate = features_aggregate.to_frame()
+            features_aggregate.columns = [[cur], [tenor]]
+            aggregate_df = pd.concat([aggregate_df, features_aggregate], axis=1)
+    all_features.to_csv(STRATEGY_FOLDER + "all_features.csv")
+    aggregate_df.sort_index(inplace=True)
+    aggregate_df.to_csv(STRATEGY_FOLDER + "features_aggregate.csv")
+
+    features_df = aggregate_df.copy()
+    features_df = features_df.loc[RL_START_DT:]
+    mondays = list(filter(lambda x: x.weekday() == 4, features_df.index))
+    features_df = features_df.loc[mondays]
+    features_df = (features_df / 2).round(0).apply(np.sign)
+    xccy_std_df = xccy_rawdata.diff().rolling(REAL_VOL_WINDOW).std(ddof=0)
+    xccy_std_df = xccy_std_df.loc[RL_START_DT:]
+    vol_adj_sz = (1 / xccy_std_df).clip(0, 1)
+    vol_adj_sz = vol_adj_sz.loc[mondays, (slice(None), TRADABLES)]
+    pre_w_sz = features_df * vol_adj_sz * FREQ
+    for cur in CURS:
+        pre_w_sz.loc[:, (cur, slice(None))] = pre_w_sz.loc[:, (cur, slice(None))] * RISK_PROFILE[cur]
+    pre_w_sz = pre_w_sz.dropna(axis='columns')
+    pre_w_sz.loc[pre_w_sz.index >= '2021-10-01'] = 0
+    pre_w_sz.to_csv(STRATEGY_FOLDER + "pre_weight_tg_size.csv")
+
+
+def get_historical_pnl_series():
+    features_file = STRATEGY_FOLDER + "features_aggregate.csv"
+    features_df = pd.read_csv(features_file, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    features_df = features_df.loc[BT_START_DT:dt.datetime.today(), :]
+    features_df.sort_index(inplace=True)
+    # for the 1 day delay in execution
+    features_df.drop(features_df.index[-1], inplace=True)
+
+    xccy_file_path = STRATEGY_FOLDER + "ccyswaps_rates.csv"
+    xccy_rawdata = pd.read_csv(xccy_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    xccy_rawdata.sort_index(inplace=True)
+    xccy_rawdata.ffill(inplace=True)
+    # take close data only
+    xccy_rawdata = xccy_rawdata.loc[:(dt.datetime.today() - dt.timedelta(days=1))]
+
+    xccy_std_df = xccy_rawdata.diff().rolling(REAL_VOL_WINDOW).std(ddof=0)
+
+    for tradable in TRADABLES:
+        tradable_df = pd.DataFrame()
+        tradable_features = features_df.loc[::FREQ, (slice(None), tradable)]
+        tradable_features.columns = tradable_features.columns.droplevel(1)
+        for cur in tradable_features.columns:
+            features_series = tradable_features[cur]
+            features_series = features_series[(features_series >= 1) | (features_series <= -1)]
+            fwd_series = xccy_rawdata[cur][tradable]
+            spot_series = xccy_rawdata[cur][INTER_MAP[tradable]]
+            for date in features_series.index:
+                real_vol = xccy_std_df[cur][tradable].loc[date]
+                size = np.sign(features_series[date]) * min(1.0 / real_vol, 1.0) * FREQ * RISK_PROFILE[cur]
+                date_entered = fwd_series.loc[date:].index[1]
+                try:
+                    enddate = fwd_series.loc[(date_entered + dt.timedelta(days=365)):].index[0]
+                    trade_exited = True
+                except:
+                    enddate = date_entered + dt.timedelta(days=365)
+                    trade_exited = False
+                all_dates_entered = fwd_series.loc[date_entered:enddate].index
+                scaler = list(map(lambda x: (x - all_dates_entered[0]).days / 365, all_dates_entered))
+                scaler = np.array(scaler)
+                trade_price_series = (fwd_series.loc[date_entered:enddate] * (1 - scaler)
+                                      + spot_series.loc[date_entered:enddate] * scaler)
+                cost = cost_by_ccy(cur) / 2
+                pnl_series = (trade_price_series - fwd_series.loc[date_entered]) * size - abs(cost) * abs(size)
+                if trade_exited:
+                    pnl_series.iloc[-1] = pnl_series.iloc[-1] - abs(cost) * abs(size)
+                pnl_df = pnl_series.to_frame()
+                pnl_df.columns = [[date_entered], [cur], [size]]
+                tradable_df = pd.concat([tradable_df, pnl_df], axis=1)
+            print(cur)
+        tradable_df.to_csv(STRATEGY_FOLDER + "tradable\\" + tradable + "_pnl_series.csv")
+
+
+def aggregate_pnl():
+    strategy_pnl = pd.DataFrame()
+    for tradable in TRADABLES:
+        tradable_df = pd.read_csv(STRATEGY_FOLDER + "tradable\\" + tradable + "_pnl_series.csv", index_col=0,
+                                  parse_dates=True, dayfirst=True, header=[0, 1, 2])
+        tradable_df = tradable_df.ffill()
+        tradable_aggregate = tradable_df.sum(axis=1)
+        tradable_aggregate = tradable_aggregate.to_frame()
+        tradable_aggregate.columns = [tradable]
+        strategy_pnl = pd.concat([strategy_pnl, tradable_aggregate], axis=1)
+    strategy_pnl.to_csv(STRATEGY_FOLDER + "tradable\\pnl_aggregate.csv")
+    strategy_daily_pnl = strategy_pnl.diff()
+    strategy_daily_pnl.to_csv(STRATEGY_FOLDER + "tradable\\pnl_aggregate_dailypnl.csv")
+
+
+def aggregate_pnl_with_weights():
+    strategy_daily_pnl = pd.read_csv(STRATEGY_FOLDER + "tradable\\pnl_aggregate_dailypnl.csv",
+                                     index_col=0, parse_dates=True, dayfirst=True)
+    weights = pd.read_csv(STRATEGY_FOLDER + "weights\\" + dt.date.today().strftime("%Y%m%d") + '_weights.csv',
+                          index_col=0, parse_dates=True, dayfirst=True)
+    weights_shifted = weights.shift(periods=1)
+    weighted_pnl = weights_shifted * strategy_daily_pnl
+    weighted_pnl = weighted_pnl.sum(axis=1).to_frame()
+    weighted_pnl.columns = ["PnL"]
+    weighted_pnl.to_csv(r"G:\BFAM_FO\Systematic\Data Storage\Strategy_Level_PnL\\ccyswap_meanreversion_backtest.csv")
+
+
+def data_updater():
+    def aux_update(ticker_map, filepath, multi_col=False):
+        filepath = STRATEGY_FOLDER + filepath
+        if multi_col:
+            rawdata = pd.read_csv(filepath, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+        else:
+            rawdata = pd.read_csv(filepath, index_col=0, parse_dates=True, dayfirst=True)
+        end_date = dt.datetime.today()
+        start_date = end_date - BDay(1)  # rawdata.index[-1]
+        new_data = bdh(list(ticker_map.keys()), fields=['LAST_PRICE'], start_date=start_date, end_date=end_date)
+        new_data.columns = list(map(lambda x: ticker_map[x[0]], new_data.columns))
+        if multi_col:
+            new_data.columns = pd.MultiIndex.from_tuples(new_data.columns, names=('', ''))
+        new_data.index = list(map(lambda x: dt.datetime(x.year, x.month, x.day), new_data.index))
+        rawdata.drop(np.intersect1d(new_data.index, rawdata.index), inplace=True)
+        rawdata = pd.concat([rawdata, new_data])
+        rawdata.sort_index(inplace=True)
+        rawdata.to_csv(filepath)
+        return rawdata
+
+    fx_spot_tickers = {
+        "AUDUSD BGN Curncy": "AUD",
+        "EURUSD BGN Curncy": "EUR",
+        "GBPUSD BGN Curncy": "GBP",
+        "USDJPY BGN Curncy": "JPY",
+    }
+    aux_update(fx_spot_tickers, "fxspot_rates.csv", multi_col=False)
+
+    fx_points_tickers = {
+        "AUD3M BGN Curncy": "AUD",
+        "EUR3M BGN Curncy": "EUR",
+        "GBP3M BGN Curncy": "GBP",
+        "JPY3M BGN Curncy": "JPY",
+    }
+    aux_update(fx_points_tickers, "fxpoints_rates.csv", multi_col=False)
+
+    irs_tickers = {
+        "EUSA2 CMPN Curncy": ("EUR", "2y"),
+        "EUSA5 CMPN Curncy": ("EUR", "5y"),
+        "EUSA10 CMPN Curncy": ("EUR", "10y"),
+        "CDSW10 CMPN Curncy": ("CAD", "10y"),
+        "CDSW2 CMPN Curncy": ("CAD", "2y"),
+        "CDSW5 CMPN Curncy": ("CAD", "5y"),
+        "ADSWAP10 CMPN Curncy": ("AUD", "10y"),
+        "ADSWAP2Q CMPN Curncy": ("AUD", "2y"),
+        "ADSWAP5 CMPN Curncy": ("AUD", "5y"),
+        "BPSWS10 CMPN Curncy": ("GBP", "10y"),
+        "BPSWS5 CMPN Curncy": ("GBP", "5y"),
+        "BPSWS2 CMPN Curncy": ("GBP", "2y"),
+        "JYSO10 CMPN Curncy": ("JPY", "10y"),
+        "JYSO5 CMPN Curncy": ("JPY", "5y"),
+        "JYSO2 CMPN Curncy": ("JPY", "2y"),
+        "USSWAP10 CMPN Curncy": ("USD", "10y"),
+        "USSWAP5 CMPN Curncy": ("USD", "5y"),
+        "USSWAP2 CMPN Curncy": ("USD", "2y"),
+    }
+    aux_update(ticker_map=irs_tickers, filepath="irs_rates.csv", multi_col=True)
+
+    def ccy_data_source(c):
+        if c == 'SEK':
+            return ' BGN'
+        elif c in ['ILS', 'MXN']:
+            return ' CMPN'
+        else:
+            return ''
+
+    tenor_name = ['C', 1, 2, 3, 5, 6, 7, 10, 12, 15]
+    ccy_tickers = {}
+    for cur in CURS:
+        for t in tenor_name:
+            if (cur == 'JPY') & (t == 1):
+                t = '12M'
+            if (cur in ['JPY', 'SGD']) & (t == 'C'):
+                t = '3M'
+            if cur in ['ZAR', 'HKD'] and t in [10, 12, 15]:
+                continue
+            ccy_tickers[
+                base_mapping[cur] + str(t) + (suffix[cur] if t not in ['3M', '12M'] else "") + ccy_data_source(
+                    cur) + " Curncy"] = \
+                (cur, str(t) + 'y' if t not in ['C', '3M'] else '3m')
+
+    ccy_tickers['JYBSS12M Curncy'] = ('JPY', '1y')
+
+    new = bdh(list(ccy_tickers.keys()), fields=['PX_LAST'], start_date=dt.datetime.today() - BDay(1),
+              end_date=dt.datetime.today())
+    new.columns = list(map(lambda x: ccy_tickers[x[0]], new.columns))
+    new.columns = pd.MultiIndex.from_tuples(new.columns, names=('', ''))
+    new.index = list(map(lambda x: dt.datetime(x.year, x.month, x.day), new.index))
+    for ccy in CURS:
+        if (ccy, '1y') not in new.columns:
+            new.loc[:, (ccy, '1y')] = np.nan
+        if (ccy, '3y') not in new.columns:
+            new.loc[:, (ccy, '3y')] = np.nan
+        if (ccy, '2y') not in new.columns:
+            new.loc[:, (ccy, '2y')] = np.nan
+        if (ccy, '5y') not in new.columns:
+            new.loc[:, (ccy, '5y')] = np.nan
+        if ccy in ['HKD']:
+            if (ccy, '5y') in new.columns and (ccy, '7y') in new.columns:
+                new.loc[:, (ccy, '6y')] = (new.loc[:, (ccy, '5y')] + new.loc[:, (ccy, '7y')]) / 2
+        if (ccy, '6y') not in new.columns:
+            new.loc[:, (ccy, '6y')] = np.nan
+        if (ccy, '10y') in new.columns:
+            if ccy in ['SEK'] and (ccy, '15y') in new.columns:
+                new.loc[:, (ccy, '11y')] = new.loc[:, (ccy, '10y')] * 4 / 5 + new.loc[:, (ccy, '15y')] * 1 / 5
+            elif (ccy, '12y') in new.columns:
+                new.loc[:, (ccy, '11y')] = (new.loc[:, (ccy, '10y')] + new.loc[:, (ccy, '12y')]) / 2
+            else:
+                new.loc[:, (ccy, '11y')] = np.nan
+
+        if (ccy, '1y') in new.columns:
+            new.loc[:, (ccy, '1y2y')] = (((1 + new[ccy]['3y'] / 10000) ** 3 /
+                                          (1 + new[ccy]['1y'] / 10000)) ** (1 / (3 - 1)) - 1) * 10000
+            new.loc[:, (ccy, '1y5y')] = (((1 + new[ccy]['6y'] / 10000) ** 6 /
+                                          (1 + new[ccy]['1y'] / 10000)) ** (1 / (6 - 1)) - 1) * 10000
+            new.loc[:, (ccy, '1y2y-1y5y')] = new.loc[:, (ccy, '1y2y')] - new.loc[:, (ccy, '1y5y')]
+            new.loc[:, (ccy, '2y-5y')] = new.loc[:, (ccy, '2y')] - new.loc[:, (ccy, '5y')]
+            if (ccy, '10y') in new.columns:
+                new.loc[:, (ccy, '1y10y')] = (((1 + new[ccy]['11y'] / 10000) ** 11 /
+                                               (1 + new[ccy]['1y'] / 10000)) ** (1 / (11 - 1)) - 1) * 10000
+                new.loc[:, (ccy, '1y2y-1y10y')] = new.loc[:, (ccy, '1y2y')] - new.loc[:, (ccy, '1y10y')]
+                new.loc[:, (ccy, '1y5y-1y10y')] = new.loc[:, (ccy, '1y5y')] - new.loc[:, (ccy, '1y10y')]
+                new.loc[:, (ccy, '2y-10y')] = new.loc[:, (ccy, '2y')] - new.loc[:, (ccy, '10y')]
+                new.loc[:, (ccy, '5y-10y')] = new.loc[:, (ccy, '5y')] - new.loc[:, (ccy, '10y')]
+
+    xccy_file_path = STRATEGY_FOLDER + "ccyswaps_rates.csv"
+    xccy_rawdata = pd.read_csv(xccy_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    xccy_rawdata.drop(np.intersect1d(xccy_rawdata.index, new.index), inplace=True)
+    xccy_rawdata = pd.concat([xccy_rawdata, new])
+    xccy_rawdata.sort_index(inplace=True)
+    xccy_rawdata.to_csv(xccy_file_path)
+
+
+def xccy_mr_trade_rec(date_input):
+    features_file = STRATEGY_FOLDER + "features_aggregate.csv"
+    features_df = pd.read_csv(features_file, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    features_df = features_df.loc[:(date_input - dt.timedelta(days=1)), :]
+    features_df.sort_index(inplace=True)
+    date = features_df.index[features_df.index.get_loc(date_input, method='nearest')]
+    features_df = features_df.loc[date]
+
+    xccy_file_path = STRATEGY_FOLDER + "ccyswaps_rates.csv"
+    xccy_rawdata = pd.read_csv(xccy_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    xccy_rawdata.sort_index(inplace=True)
+    xccy_rawdata.ffill(inplace=True)
+    xccy_std_df = xccy_rawdata.diff().rolling(REAL_VOL_WINDOW).std(ddof=0)
+
+    weights_file_path = STRATEGY_FOLDER + "weights\\" + date_input.strftime("%Y%m%d") + "_weights.csv"
+    weights_df = pd.read_csv(weights_file_path, index_col=0, parse_dates=True, dayfirst=True)
+    weights_df_shifted = weights_df.shift(1)
+    portfolio_weights = weights_df_shifted.loc[date].to_dict()
+
+    tradable_weights = {}
+    for tradable in portfolio_weights.keys():
+        tradable_features = features_df.loc[(slice(None), tradable)]
+        tradable_weights[tradable] = {}
+        for cur in tradable_features.index:
+            signal = tradable_features[cur]
+            if signal >= 1 or signal <= -1:
+                real_vol = xccy_std_df[cur][tradable].loc[date]
+                size = np.sign(signal) * min(1.0 / real_vol, 1.0) * FREQ * portfolio_weights[tradable] * RISK_PROFILE[
+                    cur]
+                tradable_weights[tradable][cur] = size
+
+    rec_df = pd.DataFrame(tradable_weights)
+    rec_df.fillna(0, inplace=True)
+    rec_df["1y2y"] = rec_df["1y2y"] + rec_df["1y2y-1y5y"] + rec_df["1y2y-1y10y"]
+    rec_df["1y5y"] = rec_df["1y5y"] - rec_df["1y2y-1y5y"] + rec_df["1y5y-1y10y"]
+    rec_df["1y10y"] = rec_df["1y10y"] - rec_df["1y2y-1y10y"] - rec_df["1y5y-1y10y"]
+    rec_df.drop(columns=["1y2y-1y5y", "1y2y-1y10y", "1y5y-1y10y"], inplace=True)
+
+    pricer_array = []
+    for cur in rec_df.index:
+        potential_trades = rec_df.loc[cur]
+        for trade in potential_trades.index:
+            if potential_trades.loc[trade] != 0:
+                pricer_array.append([cur, "USD", "", potential_trades.loc[trade], "", "1y", trade[2:],
+                                     xccy_rawdata.loc[date, (cur, trade)]])
+    return pricer_array
+
+
+def xccy_target_porf(date_input):
+    tg_pos = pd.read_csv(STRATEGY_FOLDER + "pre_weight_tg_size.csv",
+                         index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+    tg_pos = tg_pos.loc[(date_input - dt.timedelta(days=365)):date_input]
+    for idx in tg_pos.index:
+        weights_df = pd.read_csv(STRATEGY_FOLDER + "weights//" + (idx + BDay(1)).strftime("%Y%m%d") + '_weights.csv',
+                                 index_col=0, parse_dates=True, dayfirst=True)
+        date = weights_df.index[weights_df.index.get_loc(idx, method='nearest')]
+        weights_used = weights_df.loc[date]
+        porf_weights_df = pd.read_csv(r"G:\BFAM_FO\Systematic\Data Storage\Capital_allocation\\" +
+                                      (idx + BDay(1)).strftime("%Y%m%d") + '_daily_weights.csv', index_col=0)
+        for tdb in TRADABLES:
+            tg_pos.loc[idx, (slice(None), tdb)] = tg_pos.loc[idx, (slice(None), tdb)] * weights_used[tdb] / 1000. \
+                                                  * porf_weights_df.loc['ccyswap_meanreversion_backtest'][0]
+
+    tg_pos_df = tg_pos.stack(level=0).stack(level=0)
+    tg_pos_df.index.names = ['date', 'ccy', 'tradable']
+    tg_pos_df.name = 'tg_pos'
+    tg_table = pd.pivot_table(tg_pos_df.reset_index(), values='tg_pos', index=['ccy'], columns=['tradable'],
+                              aggfunc=np.sum)
+    tg_table.fillna(0, inplace=True)
+    tg_table["1y2y"] = tg_table["1y2y"] + tg_table["1y2y-1y5y"] + tg_table["1y2y-1y10y"]
+    tg_table["1y5y"] = tg_table["1y5y"] - tg_table["1y2y-1y5y"] + tg_table["1y5y-1y10y"]
+    tg_table["1y10y"] = tg_table["1y10y"] - tg_table["1y2y-1y10y"] - tg_table["1y5y-1y10y"]
+    tg_table.drop(columns=["1y2y-1y5y", "1y2y-1y10y", "1y5y-1y10y"], inplace=True)
+    return tg_table[['1y2y', '1y5y', '1y10y']]
+
+
+def xccy_tg_diff(existing_portfolio, target_portfolio):
+    existing_portfolio = existing_portfolio[
+        (existing_portfolio['Type'] == 'CCYSWAP') | (existing_portfolio['Type'] == 'XccyIborIborSwap') | (
+                existing_portfolio['Type'] == 'XccyOisOisSwap')]
+    existing_portfolio = existing_portfolio[['Ccy', "End", 'Xccy Delta']].dropna()
+    existing_portfolio = pd.pivot_table(existing_portfolio, values='Xccy Delta', index=['Ccy'], columns=['End'],
+                                        aggfunc=np.sum)
+    existing_portfolio.columns = list(map(lambda x: '1y' + x, existing_portfolio.columns))
+    existing_portfolio = existing_portfolio.fillna(0)
+    combined = pd.concat([existing_portfolio * -1, target_portfolio]).groupby(level=0).sum()
+    return combined.fillna(0)[['1y2y', '1y5y', '1y10y']]
+
+
+def xccy_reload_tg_diff(existing_portfolio, target_portfolio):
+    existing_portfolio = existing_portfolio[
+        (existing_portfolio['Type'] == 'CCYSWAP') | (existing_portfolio['Type'] == 'XccyIborIborSwap') | (
+                existing_portfolio['Type'] == 'XccyOisOisSwap')]
+    existing_portfolio = existing_portfolio[['Ccy', "End", 'Xccy Delta']].dropna()
+    existing_portfolio = pd.pivot_table(existing_portfolio, values='Xccy Delta', index=['Ccy'], columns=['End'],
+                                        aggfunc=np.sum)
+    existing_portfolio.columns = list(map(lambda x: '3m' + x, existing_portfolio.columns))
+    existing_portfolio = existing_portfolio.fillna(0)
+    combined = pd.concat([existing_portfolio * -1, target_portfolio]).groupby(level=0).sum()
+    return combined.fillna(0)[['3m2y', '3m5y', '3m10y']]
+
+
+def xccy_raw_features(ccy, tradable, startdate, enddate):
+    raw_f = pd.read_csv(STRATEGY_FOLDER + "all_features.csv", index_col=0, header=[0, 1, 2], parse_dates=True,
+                        dayfirst=True)
+    raw_f.sort_index(inplace=True, ascending=False)
+    ret_df = raw_f.loc[enddate:startdate, (ccy.upper(), tradable.lower(), slice(None))]
+    ret_df.columns = ret_df.columns.droplevel([0, 1])
+    ret_df.index.rename('', inplace=True)
+    return ret_df
+
+
+def scripts_to_run():
+    data_updater()
+    # # collect_raw_data()
+    print("done updating data")
+    generate_historical_features()
+    print("done generating features")
+    get_historical_pnl_series()
+    print("done generating individual trade pnl series")
+    aggregate_pnl()
+    print("done aggregating pnl")
+    run_weights()
+    print("done running weights")
+    aggregate_pnl_with_weights()
+    print("done aggregating pnl with weights")
+
+    date_today = dt.date.today()
+    trade_array = xccy_mr_trade_rec(date_today)
+    print("recommendations for today")
+    print(trade_array)
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\strategies\xccy\reload.py
+----------------------------------------
+import pandas as pd
+import datetime as dt
+import numpy as np
+import systematic.strategies.ccyswap_meanreversion.derivedata as dd
+from pandas.tseries.offsets import BDay
+STRATEGY_FOLDER = r"G:/BFAM_FO/Systematic/Data Storage/Strategies/ccyswap_reload//"
+ST_DT = dt.datetime(2020, 11, 1)
+SIGNAL_L = dt.timedelta(days=365)
+
+
+def ccy_reload_target_porf(date_input):
+    tg_pos = pd.read_csv(STRATEGY_FOLDER + "reloads.csv", parse_dates=['reload_trigger_date',
+                                                                       'trade_inception_date'], dayfirst=True)
+    tg_pos = tg_pos[(tg_pos.reload_trigger_date > ST_DT) &
+                    (tg_pos.reload_trigger_date > (date_input - dt.timedelta(days=93) + BDay(10)))]
+    tg_pos = tg_pos[(tg_pos.reload_trigger_date - tg_pos.trade_inception_date) < SIGNAL_L]
+    weights = {}
+    for date in tg_pos.reload_trigger_date.unique():
+        date = pd.to_datetime(date)
+        porf_weights_df = pd.read_csv(r"G:\BFAM_FO\Systematic\Data Storage\Capital_allocation\\" +
+                                      (date + BDay(1)).strftime("%Y%m%d") + '_daily_weights.csv', index_col=0)
+        try:
+            weights[date] = porf_weights_df.loc['ccyswap_reload'][0]
+        except:
+            weights[date] = porf_weights_df.loc['ccyswap_reload_backtest'][0]
+    tg_pos.loc[:, 'porf_w'] = tg_pos.apply(lambda x: weights[pd.to_datetime(x.reload_trigger_date)], axis=1)
+    tg_pos.trade_size = tg_pos.trade_size * tg_pos.porf_w
+
+    tg_table = pd.pivot_table(tg_pos, values='trade_size', index=['ccy'], columns=['tradable'], aggfunc=np.sum)
+    tg_table.fillna(0, inplace=True)
+
+    cols_needed = list(set([x.replace('1y', '3m') for x in list(dd.TRADABLES)]) - set(tg_table.columns))
+    temp = pd.DataFrame(0., index=tg_table.index, columns=cols_needed)
+    tg_table = pd.concat([tg_table, temp], axis=1)
+    tg_table["3m2y"] = tg_table["3m2y"] + tg_table["3m2y-3m5y"] + tg_table["3m2y-3m10y"]
+    tg_table["3m5y"] = tg_table["3m5y"] - tg_table["3m2y-3m5y"] + tg_table["3m5y-3m10y"]
+    tg_table["3m10y"] = tg_table["3m10y"] - tg_table["3m2y-3m10y"] - tg_table["3m5y-3m10y"]
+    tg_table.drop(columns=["3m2y-3m5y", "3m2y-3m10y", "3m5y-3m10y"], inplace=True)
+
+    return tg_table[['3m2y', '3m5y', '3m10y']]
+
+
+def ccy_reload_trade_rec(date_input):
+    tg_pos = pd.read_csv(STRATEGY_FOLDER + "reloads.csv", parse_dates=['reload_trigger_date',
+                                                                       'trade_inception_date'], dayfirst=True)
+    monday = pd.to_datetime((date_input + dt.timedelta(days=-date_input.weekday())).date())
+    tg_pos = tg_pos[(tg_pos.reload_trigger_date == monday)]
+    tg_pos = tg_pos[(tg_pos.reload_trigger_date - tg_pos.trade_inception_date) < SIGNAL_L]
+
+    if not tg_pos.empty:
+        tg_table = pd.pivot_table(tg_pos, values='trade_size', index=['ccy'], columns=['tradable'], aggfunc=np.sum)
+        tg_table.fillna(0, inplace=True)
+
+        cols_needed = list(set([x.replace('1y', '3m') for x in list(dd.TRADABLES)]) - set(tg_table.columns))
+        temp = pd.DataFrame(0., index=tg_table.index, columns=cols_needed)
+        tg_table = pd.concat([tg_table, temp], axis=1)
+        tg_table["3m2y"] = tg_table["3m2y"] + tg_table["3m2y-3m5y"] + tg_table["3m2y-3m10y"]
+        tg_table["3m5y"] = tg_table["3m5y"] - tg_table["3m2y-3m5y"] + tg_table["3m5y-3m10y"]
+        tg_table["3m10y"] = tg_table["3m10y"] - tg_table["3m2y-3m10y"] - tg_table["3m5y-3m10y"]
+        tg_table.drop(columns=["3m2y-3m5y", "3m2y-3m10y", "3m5y-3m10y"], inplace=True)
+
+        xccy_file_path = dd.STRATEGY_FOLDER + "ccyswaps_rates.csv"
+        xccy_rawdata = pd.read_csv(xccy_file_path, index_col=0, parse_dates=True, dayfirst=True, header=[0, 1])
+        xccy_rawdata.sort_index(inplace=True)
+        xccy_rawdata.ffill(inplace=True)
+        for cur in dd.CURS:
+            for tdb in dd.TRADABLES:
+                try:
+                    xccy_rawdata.loc[:, (cur, tdb.replace('1y', '3m'))] = \
+                        1/4 * xccy_rawdata.loc[:, (cur, tdb)] + 3/4 * xccy_rawdata.loc[:, (cur, dd.INTER_MAP[tdb])]
+                except KeyError:
+                    continue
+
+        pricer_array = []
+        for cur in tg_table.index:
+            potential_trades = tg_table.loc[cur]
+            for trade in potential_trades.index:
+                if potential_trades.loc[trade] != 0:
+                    pricer_array.append([cur, "USD", "", potential_trades.loc[trade], "", "3m", trade[2:],
+                                         xccy_rawdata.loc[date_input, (cur, trade)]])
+        return pricer_array
+    else:
+        return None
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\strategies\xccy\weights.py
+----------------------------------------
+from portfolio.v0.handcrafted_allocation import optimise_over_periods_handcrafted
+from portfolio.v0.variables import *
+import pandas as pd
+import datetime
+import os
+import numpy as np
+
+
+def calculate_weights(daily_pnl_series, bootstrap_window, bootstrap_frequency, startdate, date_method, default_vol,
+                      sr_trigger, sr_window, sr_type, portfolio_change_threshold):
+    strategy_name = 'ccyswap_meanreversion'
+    folder_name = 'G:\BFAM_FO\Systematic\Data Storage\Strategies\\' + strategy_name + '\weights'
+
+    weight_df = optimise_over_periods_handcrafted(daily_pnl_series, bootstrap_window, bootstrap_frequency, startdate,
+                                                  date_method, default_vol)
+
+    # Don't allow the portfolio to leverage or deleverage unless the weights move by more than x% from present
+    # allocation
+
+    # after finding the weights, we adjust for predicted SR.
+    if sr_trigger == 1:
+        if sr_window == -1:
+            sr_table = daily_pnl_series.replace(0, np.nan).mean() / daily_pnl_series.replace(0, np.nan).std() * 16
+            average_sr = sr_table.mean()
+            sr_table = sr_table - average_sr
+            mapping = dict(SR_ADJUSTMENT_FACTOR.iterrows())
+            index_table_mapping = sr_table.to_frame().applymap(lambda x: fussy_get(mapping, x)[sr_type])
+            weighted_table = weight_df.apply(lambda x: x * index_table_mapping[0], axis=1)
+            sr_rescaled_weights = weighted_table.divide(weighted_table.sum(axis=1), axis=0)
+
+        else:
+            sr_table = (daily_pnl_series.rolling(sr_window, min_periods=int(sr_window * 0.9)).mean() * 256) / \
+                       (daily_pnl_series.rolling(sr_window, min_periods=int(sr_window * 0.9)).std() * 16)
+            average_sr = sr_table.mean(axis=1)
+            for columnname in sr_table.columns:
+                sr_table[columnname] = sr_table[columnname] - average_sr
+
+            mapping = dict(SR_ADJUSTMENT_FACTOR.iterrows())
+            index_table_mapping = sr_table.applymap(lambda x: fussy_get(mapping, x)[sr_type])
+
+            commondates = weight_df.index.intersection(index_table_mapping.index)
+
+            weighted_table = weight_df.loc[commondates] * index_table_mapping.loc[commondates]
+            sr_rescaled_weights = weighted_table.divide(weighted_table.sum(axis=1), axis=0)
+    else:
+        sr_rescaled_weights = weight_df
+
+    weights = sr_rescaled_weights
+
+    for i in range(1, len(weights.index)):
+        abs_diff_row = (weights.iloc[i] - weights.iloc[i - 1]).abs()
+        if (abs_diff_row > portfolio_change_threshold).any():
+            pass
+        else:
+            weights.iloc[i] = weights.iloc[i - 1]
+
+    # line up dates between weights and actual data
+
+    temp_weights = pd.DataFrame(index=daily_pnl_series.index, columns=daily_pnl_series.columns)
+    temp_weights[daily_pnl_series.columns] = weights[:]
+    temp_weights.ffill(inplace=True)
+    temp_weights.bfill(inplace=True)
+
+    filename = os.path.join(folder_name, datetime.date.today().strftime("%Y%m%d") + '_weights.csv')
+    temp_weights.to_csv(filename)
+
+    return temp_weights
+
+
+def run_weights():
+    tradable_file = r'G:\BFAM_FO\Systematic\Data Storage\Strategies\ccyswap_meanreversion\tradable\pnl_aggregate' \
+                    r'_dailypnl.csv'
+    daily_pnl_series = pd_readcsv(tradable_file)
+
+    date_method = 'rolling'
+    bootstrap_window = 365
+    bootstrap_frequency = '1m'
+    portfolio_change_threshold = 1 / len(daily_pnl_series.columns)
+    # portfolio_change_threshold = 0.1
+    default_vol = 100000
+    sr_trigger = 1
+    sr_window = 125
+    sr_type = 'adj_factor_no_certainty'
+
+    startdate = daily_pnl_series.head(1).index[0]
+
+    calculate_weights(daily_pnl_series, bootstrap_window, bootstrap_frequency, startdate, date_method, default_vol,
+                      sr_trigger, sr_window, sr_type, portfolio_change_threshold)
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\strategies\xccy\__init__.py
+----------------------------------------
+
+........................................

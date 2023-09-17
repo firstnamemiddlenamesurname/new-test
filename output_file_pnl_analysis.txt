@@ -1,0 +1,1574 @@
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\__init__.py
+----------------------------------------
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\mappings.py
+----------------------------------------
+from enum import Enum, auto
+
+
+class CashP(Enum):
+    USD = 'usd_ois_sofr_curve'
+    NZD = 'nzd_ois_curve'
+    AUD = 'aud_ois_curve'
+    GBP = 'gbp_ois_curve'
+    EUR = 'eur_ois_estr_curve'
+    CAD = 'cad_ois_curve'
+    JPY = 'jpy_ois_curve'
+    SEK = 'sek_ois_curve'
+    HKD = 'hkd_ois_curve'
+    SGD = 'sgd_ois_curve'
+    CNY = 'cny_ois_curve'
+    CNH = 'cnh_ois_curve'
+    INR = 'inr_ois_curve'
+    NOK = 'nok_ois_curve'
+    CHF = 'chf_ois_curve'
+
+
+class CashD(Enum):
+    USD = 'usd_ois_sofr_curve'
+    NZD = 'nzd_ois_curve'
+    AUD = 'aud_ois_curve'
+    GBP = 'gbp_ois_curve'
+    EUR = 'eur_ois_estr_curve'
+    CAD = 'cad_ois_curve'
+    JPY = 'jpy_ois_curve'
+    SEK = 'sek_ois_curve'
+    HKD = 'hkd_ois_curve'
+    SGD = 'sgd_ois_curve'
+    CNY = 'cny_ois_curve'
+    CNH = 'cnh_ois_curve'
+    INR = 'inr_ois_curve'
+    NOK = 'nok_ois_curve'
+    CHF = 'chf_ois_curve'
+
+
+class FxFwdP(Enum):
+    EURUSD = 'eur_fx_discount_curve'
+    USDCNH = 'cnh_fx_discount_curve'
+    USDJPY = 'jpy_fx_discount_curve'
+    USDIDR = 'idr_fx_discount_curve'
+    USDINR = 'inr_fx_discount_curve'
+    USDKRW = 'krw_fx_discount_curve'
+    USDRUB = 'rub_fx_discount_curve'
+    USDSGD = 'sgd_fx_discount_curve'
+    USDTHB = 'thb_fx_discount_curve'
+    USDTRY = 'try_fx_discount_curve'
+    USDTWD = 'twd_fx_discount_curve'
+    USDZAR = 'zar_fx_discount_curve'
+    USDMXN = 'mxn_fx_discount_curve'
+    AUDUSD = 'aud_fx_discount_curve'
+    NZDUSD = 'nzd_fx_discount_curve'
+    GBPUSD = 'gbp_fx_discount_curve'
+    USDSEK = 'sek_fx_discount_curve'
+    USDCHF = 'chf_fx_discount_curve'
+
+
+class FxFwdD(Enum):
+    EURUSD = 'usd_ois_sofr_curve'
+    USDCNH = 'usd_ois_sofr_curve'
+    USDJPY = 'usd_ois_sofr_curve'
+    USDIDR = 'usd_ois_sofr_curve'
+    USDINR = 'usd_ois_sofr_curve'
+    USDKRW = 'usd_ois_sofr_curve'
+    USDRUB = 'usd_ois_sofr_curve'
+    USDSGD = 'usd_ois_sofr_curve'
+    USDTHB = 'usd_ois_sofr_curve'
+    USDTRY = 'usd_ois_sofr_curve'
+    USDTWD = 'usd_ois_sofr_curve'
+    USDZAR = 'usd_ois_sofr_curve'
+    USDMXN = 'usd_ois_sofr_curve'
+    AUDUSD = 'usd_ois_sofr_curve'
+    NZDUSD = 'usd_ois_sofr_curve'
+    GBPUSD = 'usd_ois_sofr_curve'
+    USDSEK = 'usd_ois_sofr_curve'
+    USDCHF = 'usd_ois_sofr_curve'
+
+
+class FxMapping(Enum):
+    AUD = 'audusd'
+    AUDUSD = 'audusd'
+    EUR = 'eurusd'
+    EURUSD = 'eurusd'
+    GBP = 'gbpusd'
+    GBPUSD = 'gbpusd'
+    NZDUSD = 'nzdusd'
+    NZD = 'nzdusd'
+    CAD = 'usdcad'
+    USDCAD = 'usdcad'
+    CHF = 'usdchf'
+    USDCHF = 'usdchf'
+    CNH = 'usdcnh'
+    USDCNH = 'usdcnh'
+    CNY = 'usdcny'
+    USDCNY = 'usdcny'
+    HKD = 'usdhkd'
+    IDR = 'usdidr'
+    USDIDR = 'usdidr'
+    INR = 'usdinr'
+    USDINR = 'usdinr'
+    JPY = 'usdjpy'
+    USDJPY = 'usdjpy'
+    KRW = 'usdkrw'
+    USDKRW = 'usdkrw'
+    MXN = 'usdmxn'
+    USDMXN = 'usdmxn'
+    NOK = 'usdnok'
+    USDNOK = 'usdnok'
+    RUB = 'usdrub'
+    USDRUB = 'usdrub'
+    SEK = 'usdsek'
+    USDSEK = 'usdsek'
+    SGD = 'usdsgd'
+    USDSGD = 'usdsgd'
+    THB = 'usdthb'
+    USDTHB = 'usdthb'
+    TRY = 'usdtry'
+    USDTRY = 'usdtry'
+    TWD = 'usdtwd'
+    USDTWD = 'usdtwd'
+    USDZAR = 'usdzar'
+    ZAR = 'usdzar'
+    USD = ''
+    HKSE = 'usdhkd'
+    SHSE = 'usdcnh'
+    SZSE = 'usdcnh'
+    ES = USD
+    VHO = 'eurusd'
+    VG = 'eurusd'
+
+
+class SwaptionLiborP(Enum):
+    USD = 'usd_libor_curve'
+    EUR = 'eur_libor_6m_curve'
+
+
+class SwaptionLiborD(Enum):
+    USD = 'usd_ois_sofr_curve'
+    EUR = 'eur_ois_estr_curve'
+
+
+class SwaptionLiborRV(Enum):
+    USD = 'usd_libor_swaption_vol'
+    EUR = 'eur_libor_swaption_vol'
+
+
+class IRSwapP(Enum):
+    USD = 'usd_libor_curve'
+    NZD = 'nzd_libor_curve'
+    AUD = 'aud_libor_6m_curve'
+    GBP = 'gbp_libor_curve'
+    CAD = 'cad_libor_curve'
+    JPY = 'jpy_libor_curve'
+    SEK = 'sek_libor_curve'
+    HKD = 'hkd_libor_curve'
+    ZAR = 'zar_libor_single_curve'
+    SGD = 'sgd_libor_curve'
+    EUR = 'eur_libor_6m_curve'
+    NOK = 'nok_libor_6m_curve'
+
+
+class IRSwapD(Enum):
+    USD = 'usd_ois_sofr_curve'
+    NZD = 'nzd_ois_curve'
+    AUD = 'aud_ois_curve'
+    GBP = 'gbp_ois_curve'
+    EUR = 'eur_ois_estr_curve'
+    CAD = 'cad_ois_curve'
+    JPY = 'jpy_ois_curve'
+    SEK = 'sek_ois_curve'
+    HKD = 'hkd_ois_curve'
+    SGD = 'sgd_ois_curve'
+    CNY = 'cny_ois_curve'
+    INR = 'inr_ois_curve'
+    NOK = 'nok_ois_curve'
+    CHF = 'chf_ois_curve'
+
+
+class SwaptionOisP(Enum):
+    USD = 'usd_ois_sofr_curve'
+    EUR = 'eur_ois_estr_curve'
+
+
+class SwaptionOisD(Enum):
+    USD = 'usd_ois_sofr_curve'
+    EUR = 'eur_ois_estr_curve'
+
+
+class SwaptionOisRV(Enum):
+    USD = 'usd_ois_swaption_vol'
+
+
+class OISSwapD(Enum):
+    USD = 'usd_ois_sofr_curve'
+    NZD = 'nzd_ois_curve'
+    AUD = 'aud_ois_curve'
+    GBP = 'gbp_ois_curve'
+    EUR = 'eur_ois_estr_curve'
+    CAD = 'cad_ois_curve'
+    JPY = 'jpy_ois_curve'
+    SEK = 'sek_ois_curve'
+    HKD = 'hkd_ois_curve'
+    SGD = 'sgd_ois_curve'
+    CNY = 'cny_ois_curve'
+    INR = 'inr_ois_curve'
+    NOK = 'nok_ois_curve'
+    CHF = 'chf_ois_curve'
+
+
+class OISSwapP(Enum):
+    USD = 'usd_ois_sofr_curve'
+    NZD = 'nzd_ois_curve'
+    AUD = 'aud_ois_curve'
+    GBP = 'gbp_ois_curve'
+    EUR = 'eur_ois_estr_curve'
+    CAD = 'cad_ois_curve'
+    JPY = 'jpy_ois_curve'
+    SEK = 'sek_ois_curve'
+    HKD = 'hkd_ois_curve'
+    SGD = 'sgd_ois_curve'
+    CNY = 'cny_ois_curve'
+    INR = 'inr_ois_curve'
+    NOK = 'nok_ois_curve'
+    CHF = 'chf_ois_curve'
+
+
+class XccyIborOisSwapD(Enum):
+    CAD = 'cad_xccy_libor_ois_curve'
+    AUD = 'aud_xccy_libor_ois_curve'
+    NZD = 'nzd_xccy_libor_ois_curve'
+    SEK = 'sek_xccy_libor_ois_curve'
+    HKD = 'hkd_xccy_libor_ois_curve'
+
+
+class XccyIborOisSwapP(Enum):
+    CAD = 'cad_xccy_libor_ois_curve'
+    AUD = 'aud_xccy_libor_ois_curve'
+    NZD = 'nzd_xccy_libor_ois_curve'
+    SEK = 'sek_xccy_libor_ois_curve'
+    HKD = 'hkd_xccy_libor_ois_curve'
+
+
+class XccyOisOisSwapD(Enum):
+    SGD = 'sgd_xccy_sora_sofr_curve'
+    JPY = 'jpy_xccy_tona_sofr_curve'
+    GBP = 'gbp_xccy_sonia_sofr_curve'
+
+
+class XccyOisOisSwapP(Enum):
+    SGD = 'sgd_xccy_sora_sofr_curve'
+    JPY = 'jpy_xccy_tona_sofr_curve'
+    GBP = 'gbp_xccy_sonia_sofr_curve'
+
+
+class XccyIborIborSwapD(Enum):
+    NZD = 'nzd_xccy_curve'
+    AUD = 'aud_xccy_curve'
+    GBP = 'gbp_xccy_curve'
+    EUR = 'eur_xccy_curve'
+    CAD = 'cad_xccy_curve'
+    JPY = 'jpy_xccy_curve'
+    SEK = 'sek_xccy_curve'
+    HKD = 'hkd_xccy_curve'
+    ZAR = 'zar_xccy_curve'
+    SGD = 'sgd_xccy_curve'
+
+
+class XccyIborIborSwapP(Enum):
+    NZD = 'nzd_xccy_curve'
+    AUD = 'aud_xccy_curve'
+    GBP = 'gbp_xccy_curve'
+    EUR = 'eur_xccy_curve'
+    CAD = 'cad_xccy_curve'
+    JPY = 'jpy_xccy_curve'
+    SEK = 'sek_xccy_curve'
+    HKD = 'hkd_xccy_curve'
+    ZAR = 'zar_xccy_curve'
+    SGD = 'sgd_xccy_curve'
+
+
+class IborOisBasisSwapP(Enum):
+    USD = 'usd_libor_curve'
+
+
+class IborOisBasisSwapD(Enum):
+    USD = 'usd_ois_sofr_curve'
+
+
+class EqCash_TP(Enum):
+    HKSE = 'hkse'
+    SHSE = 'shse'
+    SZSE = 'szse'
+
+
+class EqFuture_TP(Enum):
+    ES = 'esa'
+    VHO = 'vhoa'
+    VG = 'vga'
+
+
+MAPPINGS = {
+    'Cash': {'projection': CashP,
+             'discounting': CashD,
+             'rates_vol': 1,
+             'fx_spot': FxMapping,
+             'fx_vol': 1,
+             'fx_fixing': 1,
+             'rates_fixing': 1
+             },
+    'FxFwd': {
+        'projection': FxFwdP,
+        'discounting': FxFwdD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'SwaptionLibor': {
+        'projection': SwaptionLiborP,
+        'discounting': SwaptionLiborD,
+        'rates_vol': SwaptionLiborRV,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'IRSwap': {
+        'projection': IRSwapP,
+        'discounting': IRSwapD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'SwaptionOis': {
+        'projection': SwaptionOisP,
+        'discounting': SwaptionOisD,
+        'rates_vol': SwaptionOisRV,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'OISSwap': {
+        'projection': OISSwapP,
+        'discounting': OISSwapD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'XccyIborOisSwap': {
+        'projection': XccyIborOisSwapP,
+        'discounting': XccyIborOisSwapD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'XccyOisOisSwap': {
+        'projection': XccyOisOisSwapP,
+        'discounting': XccyOisOisSwapD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'XccyIborIborSwap': {
+        'projection': XccyIborIborSwapP,
+        'discounting': XccyIborIborSwapD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'IborOisBasisSwap': {
+        'projection': IborOisBasisSwapP,
+        'discounting': IborOisBasisSwapD,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'EqCash_T': {
+        'projection': EqCash_TP,
+        'discounting': None,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    },
+    'EqFuture_T': {
+        'projection': EqFuture_TP,
+        'discounting': None,
+        'rates_vol': None,
+        'fx_spot': FxMapping,
+        'fx_vol': None,
+        'fx_fixing': None,
+        'rates_fixing': None
+    }
+}
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\market_snaps.py
+----------------------------------------
+import datetime
+from typing import List, Dict
+
+from syfi.marketsnap import MarketSnap
+from syfi.pyxll_link import syfi_return_saved_market_snap_s3
+
+
+def get_all_marketsnaps(
+        list_dates: List[datetime.date],
+        load_time: str,
+        hist_at_1800: bool = False
+) -> Dict[datetime.date, MarketSnap]:
+    temp_output: Dict[datetime.date, MarketSnap] = {}
+    for d in list_dates:
+        if hist_at_1800:
+            if d < datetime.date.today():
+                temp_output[d] = syfi_return_saved_market_snap_s3(d, load_time='1800')
+            else:
+                temp_output[d] = syfi_return_saved_market_snap_s3(d, load_time=load_time)
+        else:
+            temp_output[d] = syfi_return_saved_market_snap_s3(d, load_time=load_time)
+
+    return temp_output
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\port_his_pnl.py
+----------------------------------------
+import datetime
+from dataclasses import dataclass
+from typing import Union, List, Dict, Any
+
+import pandas as pd
+
+from syfi.marketsnap import MarketSnap
+from systematic.analysis.hist_pnl.market_snaps import get_all_marketsnaps
+from systematic.analysis.hist_pnl.port_snaps import get_all_portfolios
+from systematic.analysis.hist_pnl.pricing_helper import analysis_pnl_explain
+from systematic.folios.ps import PortfolioSnap
+
+
+def keyshift(dictionary, key, diff) -> Union[Any, None]:
+    if key in dictionary:
+        token = object()
+        keys = [token] * (diff * -1) + sorted(dictionary) + [token] * diff
+        newkey = keys[keys.index(key) + diff]
+        if newkey is token:
+            return None
+        else:
+            return newkey
+    else:
+        return None
+
+
+@dataclass
+class PnLReplay:
+    p_snap: PortfolioSnap = None
+    strategy_names: Union[str, List[str], List[List[str]]] = None
+    start_date: datetime.date = None
+    end_date: datetime.date = None
+    ms_load_time: str = '1800'
+    ms: Dict[datetime.date, MarketSnap] = None
+    port_list: Dict[datetime.date, List] = None
+    min_notional_to_price: float = 1
+    hist_at_1800: bool = False
+
+    def __post_init__(self):
+        self.port_list = get_all_portfolios(p_snap=self.p_snap,
+                                            start_date=self.start_date,
+                                            end_date=self.end_date,
+                                            strategy_names=self.strategy_names)
+        list_dates = list(self.port_list)
+        self.ms = get_all_marketsnaps(
+            list_dates=list_dates,
+            load_time=self.ms_load_time,
+            hist_at_1800=self.hist_at_1800
+        )
+
+    def run_pnl_explain(self) -> Dict[datetime.date, Dict[str, Dict[str, Dict[str, float]]]]:
+        output_dict = {}
+        for pnl_date in self.port_list:
+            output_dict[pnl_date] = {}
+            date_t = pnl_date
+            date_t_1 = keyshift(self.port_list, date_t, -1)
+            for port_line in self.port_list[pnl_date]:
+                portfolio_name = port_line[0]
+                output_dict[pnl_date][portfolio_name] = {}
+                portfolio_trades = port_line[1].portfolio
+                for trade_name, trade_obj in portfolio_trades.items():
+                    if type(trade_obj).__name__ in ['EqCash_T', 'EqFuture_T']:
+                        trade_notional = trade_obj.size
+                    else:
+                        trade_notional = trade_obj.notional
+
+                    if abs(trade_notional) > self.min_notional_to_price:
+                        trade_date = datetime.datetime.strptime(trade_name.split('_')[0], '%Y%m%d').date()
+                        new_trade_flag = True if trade_date == pnl_date else False
+                        ms_t = self.ms[date_t]
+                        ms_t_1 = self.ms[date_t_1] if (date_t_1 is not None) else None
+                        pnl_explain_output = analysis_pnl_explain(trade_obj, ms_t, ms_t_1, new_trade_flag)
+                        output_dict[pnl_date][portfolio_name][trade_name] = pnl_explain_output
+
+        return output_dict
+
+    def format_output(self,
+                      agg_by_port: bool,
+                      output_dict: Dict[datetime.date, Dict[str, Dict[str, Dict[str, float]]]]) -> pd.DataFrame:
+        _ = self
+        reform = {(level1_key, level2_key, level3_key): values
+                  for level1_key, level2_dict in output_dict.items()
+                  for level2_key, level3_dict in level2_dict.items()
+                  for level3_key, values in level3_dict.items()}
+
+        reform_df = pd.DataFrame(reform).T
+
+        if agg_by_port:
+            return reform_df.groupby(level=[0, 1]).sum()
+        return reform_df
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\port_snaps.py
+----------------------------------------
+import datetime
+from typing import Dict, List, Union
+
+import pandas as pd
+
+from syfi.pyxll_link import syfi_return_portfolio, syfi_get_portfolio_snap
+from syfi.syfi_utils import dateadd
+from systematic.folios.ps import PortfolioSnap
+
+
+def get_all_portfolios(
+        p_snap: PortfolioSnap,
+        start_date: datetime.date,
+        end_date: datetime.date,
+        strategy_names: Union[List[str], str]
+) -> Dict[datetime.date, List]:
+
+    output_dict: Dict[datetime.date, List] = {}
+    for d in pd.date_range(start=start_date, end=end_date):
+
+        date_now = d.date()
+        date_yest = dateadd(date_now, '-1b')
+        cut_off_time = datetime.datetime(date_yest.year, date_yest.month,
+                                         date_yest.day, 18, 29, 00)
+
+        if d.isoweekday() in range(1, 6):
+            temp_port = syfi_return_portfolio(p_snap,
+                                              strategy_names=strategy_names,
+                                              reload=False, consolidate=True,
+                                              cut_off_time=cut_off_time
+                                              )
+            output_dict[d.date()] = temp_port
+
+    return output_dict
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\pricing_helper.py
+----------------------------------------
+from functools import singledispatch
+from typing import Dict
+
+from syfi.pyxll_link import syfi_pv, syfi_pnl_explain
+from syfi.marketsnap import MarketSnap
+from syfi.trades import TradeABC, Cash, FxFwd, SwaptionLibor, IRSwap, SwaptionOis, OISSwap, XccyIborOisSwap, \
+    XccyOisOisSwap, XccyIborIborSwap, EqCash_T, EqFuture_T, IborOisBasisSwap
+from systematic.analysis.hist_pnl.mappings import MAPPINGS
+
+
+@singledispatch
+def analysis_pnl_explain(trade: TradeABC, ms_t: MarketSnap, ms_t_1: MarketSnap, new_trade_flag: bool) -> Dict:
+    raise TypeError(trade)
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_cash(trade: Cash, ms_t: MarketSnap, ms_t_1: MarketSnap, new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_fxfwd(trade: FxFwd, ms_t: MarketSnap, ms_t_1: MarketSnap, new_trade_flag: bool) -> Dict:
+    trade_currency = trade.currency_pair
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        if MAPPINGS[type(trade).__name__]['projection'][trade_currency].value in ms_t_1.curves:
+            ms_t_1_p_curve = ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value]
+        else:
+            ms_t_1_p_curve = None
+
+        if MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value in ms_t_1.curves:
+            ms_t_1_d_curve = ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value]
+        else:
+            ms_t_1_d_curve = None
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1_p_curve,
+                                       ms_t_1_d_curve,
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_swaptionlibor(trade: SwaptionLibor, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                       new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 ms_t.rates_vol[MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value]
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         ms_t_1.rates_vol[MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value]
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t.rates_vol[
+                                           MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       ms_t_1.rates_vol[
+                                           MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value],
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_IRSwap(trade: IRSwap, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_SwaptionOis(trade: SwaptionOis, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                     new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 ms_t.rates_vol[MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value]
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         ms_t_1.rates_vol[MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value]
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t.rates_vol[
+                                           MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       ms_t_1.rates_vol[
+                                           MAPPINGS[type(trade).__name__]['rates_vol'][trade_currency].value],
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_OISSwap(trade: OISSwap, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                 new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_XccyIborOisSwap(trade: XccyIborOisSwap, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                         new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_XccyOisOisSwap(trade: XccyOisOisSwap, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                        new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_XccyIborIborSwap(trade: XccyIborIborSwap, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                          new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_IborOisBasisSwap(trade: IborOisBasisSwap, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                          new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         ms_t_1.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t.curves[MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       ms_t_1.curves[
+                                           MAPPINGS[type(trade).__name__]['discounting'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_EqCash_T(trade: EqCash_T, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                  new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.eq_cash[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.eq_cash[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.eq_cash[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.eq_cash[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+
+@analysis_pnl_explain.register
+def analysis_pnl_explain_EqFuture_T(trade: EqFuture_T, ms_t: MarketSnap, ms_t_1: MarketSnap,
+                                    new_trade_flag: bool) -> Dict:
+    trade_currency = trade.trade_currency
+    if trade_currency == 'USD':
+        fx_t = ""
+    else:
+        if MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value == '':
+            fx_t = ""
+        else:
+            fx_t = ms_t.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+    pv = syfi_pv(trade,
+                 ms_t.eq_futures[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                 fx_t,
+                 )
+    if (not new_trade_flag) & (ms_t_1 is not None):
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            if MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value == '':
+                fx_t_1 = ""
+            else:
+                fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+        pv_t_1 = syfi_pv(trade,
+                         ms_t_1.eq_futures[MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                         fx_t_1,
+                         )
+    else:
+        pv_t_1 = 0
+
+    if ms_t_1 is None:
+        output = {
+            'rates': 0,
+            'rates_vol': 0,
+            'fx_delta': 0,
+            'fx_vol': 0,
+            'equity': 0,
+            'equity_vol': 0,
+            'theta': 0,
+            'NT': pv,
+            'unexplained': 0,
+            'pv': pv,
+            'pv_t_1': 0,
+        }
+    else:
+        if trade_currency == 'USD':
+            fx_t_1 = ''
+        else:
+            if MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value == '':
+                fx_t_1 = ""
+            else:
+                fx_t_1 = ms_t_1.fx[MAPPINGS[type(trade).__name__]['fx_spot'][trade_currency].value]
+
+        pnl_explain = syfi_pnl_explain(trade,
+                                       ms_t.eq_futures[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       fx_t,
+                                       ms_t_1.eq_futures[
+                                           MAPPINGS[type(trade).__name__]['projection'][trade_currency].value],
+                                       fx_t_1,
+                                       'x' if new_trade_flag else "")
+
+        output = pnl_explain.to_dict()
+        output['pv'] = pv
+        output['pv_t_1'] = pv_t_1
+        output['ccy'] = trade_currency
+
+    return output
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\test.py
+----------------------------------------
+import datetime
+from systematic.analysis.hist_pnl.port_his_pnl import PnLReplay
+from syfi.pyxll_link import syfi_get_portfolio_snap
+load_time = '1800'
+# pid = 53036
+# pid = 67035
+pid = 55516
+start_date = datetime.date(2022, 9, 25)
+end_date = datetime.date.today()
+# strategy_names = [['equities_pattern']]
+# strategy_names =[['fx_spot_1']]
+strategy_names =[['trf']]
+p_snap = syfi_get_portfolio_snap(pid=pid,
+                                 reload=False,
+                                 save_s3=False)
+
+self = PnLReplay(p_snap=p_snap,
+                 strategy_names=strategy_names,
+                 start_date=start_date,
+                 end_date=end_date,
+                 ms_load_time=load_time)
+
+output_dict = self.run_pnl_explain()
+ouput_frame = self.format_output(agg_by_port=True, output_dict=output_dict)
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\hist_pnl\__init__.py
+----------------------------------------
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\live_pnl\mult_port.py
+----------------------------------------
+from dataclasses import dataclass, field
+import datetime
+from typing import List, Union, Dict
+from systematic.analysis.live_pnl import Config
+from sylo.com import chat
+
+import pandas as pd
+
+from syfi.pyxll_link import syfi_get_portfolio_snap, syfi_dateadd
+from systematic.analysis.hist_pnl.port_his_pnl import PnLReplay
+from systematic.folios.ps import PortfolioSnap
+from sylo.com.progress_bar import progress_bar
+
+
+@dataclass
+class LivePnl:
+    strategy_names: Union[str, List[str], List[List[str]]]
+    pid: Union[List[int], int] = 47835
+    start_date: datetime.date = None
+    end_date: datetime.date = None
+    ms_load_time: str = None
+    reload: bool = False
+    save_s3: bool = False
+    p_snap: PortfolioSnap = None
+    pnl_replay: Dict[str, PnLReplay] = field(default_factory=dict)
+    hist_at_1800: bool = False
+
+    def __post_init__(self):
+        self.p_snap = syfi_get_portfolio_snap(pid=self.pid,
+                                              reload=self.reload,
+                                              save_s3=self.save_s3)
+
+        self.strategy_names = [self.strategy_names, ] if isinstance(self.strategy_names, str) else self.strategy_names
+        self.start_date = syfi_dateadd(datetime.date.today(), '-1b')
+        self.end_date = datetime.date.today()
+        self.ms_load_time = datetime.datetime.now().strftime("%H")+datetime.datetime.now().strftime("%m")
+        # self.ms_load_time = '1800'
+
+        for strat in progress_bar(self.strategy_names):
+            self.pnl_replay[strat] = PnLReplay(p_snap=self.p_snap,
+                                               strategy_names=strat,
+                                               start_date=self.start_date,
+                                               end_date=self.end_date,
+                                               ms_load_time=self.ms_load_time,
+                                               hist_at_1800=self.hist_at_1800)
+
+    def format_results(self,
+                       results: Dict[str, Dict],
+                       recap: bool = True) -> pd.DataFrame:
+
+        reform = {(level2_key, level1_key, level4_key): values
+                  for level1_key, level2_dict in results.items()
+                  for level2_key, level3_dict in level2_dict.items()
+                  for level3_key, level4_dict in level3_dict.items()
+                  for level4_key, values in level4_dict.items()}
+
+        reform_df = pd.DataFrame(reform).T
+        reform_df = reform_df.loc[(self.end_date.strftime("%Y-%m-%d"), slice(None), slice(None))]
+        reform_df['pnl'] = reform_df['pv'] - reform_df['pv_t_1']
+
+        reform_df.index.set_names(['strategy', 'trade'], inplace=True)
+        reform_df.reset_index(inplace=True)
+        reform_df.set_index(['strategy', 'ccy', 'trade'], inplace=True)
+
+        if recap:
+            reform_df = reform_df.groupby(level=[0]).sum() * 1000
+            reform_df = reform_df.loc[self.strategy_names]
+            reform_df.loc['Total'] = reform_df.sum()
+        else:
+            reform_df = reform_df.groupby(level=[0, 1]).sum() * 1000
+
+        return reform_df
+
+    def __call__(self, recap: bool = True, *args, **kwargs) -> pd.DataFrame:
+        results: Dict[str, Dict] = {}
+        for pnlreplay in progress_bar(self.pnl_replay.values()):
+            results[pnlreplay.strategy_names] = pnlreplay.run_pnl_explain()
+
+        final_data = self.format_results(results=results, recap=recap)
+
+        return final_data
+
+    def main_chat(self,
+                  formated_results: pd.DataFrame):
+        chat.info('PnL in (K USD) on: ' + datetime.datetime.now().strftime(
+            '%y-%m-%d') + ' at: ' + datetime.datetime.now().strftime('%H:%M'),
+                  detail=formated_results.astype(int), conv_ids={Config.CHAT_ID})
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\live_pnl\__init__.py
+----------------------------------------
+class Config:
+    CHAT_ID = '2i6YTubc+vAM8YQwrmz4OX///nxzrndXdA=='
+    STRATEGY_NAMES_PM = ['ccyswap_meanreversion', 'ccyswap_reload', 'swap_g10_basket', 'equities_pattern', 'a_h',
+                         'trf', 'fx_spot_1', 'hedge_swaption_sys', 'hedge_ccyswap', 'hedge_swap', 'hedge_fx', 'Retired',
+                         'ZZZ funding', ]
+    STRATEGY_NAMES_AM = ['ccyswap_meanreversion', 'ccyswap_reload', 'swap_g10_basket', 'equities_pattern', 'a_h',
+                         'fx_spot_1', 'hedge_swaption_sys', 'hedge_ccyswap', 'hedge_swap', 'hedge_fx', 'Retired',
+                         'ZZZ funding', ]
+
+........................................
+File Path: C:\Users\adelh\OneDrive\Documents\dev\systematic\systematic\analysis\live_pnl\__main__.py
+----------------------------------------
+import datetime
+
+import pytz
+
+from sylo.com import chat
+from systematic.analysis.live_pnl import Config
+from systematic.analysis.live_pnl.mult_port import LivePnl
+
+
+def main():
+    time_now = datetime.datetime.now(tz=pytz.timezone('GMT'))
+
+    if time_now.time() >= datetime.time(8, 00, 00):
+        strats = Config.STRATEGY_NAMES_PM
+    else:
+        strats = Config.STRATEGY_NAMES_AM
+    pnls = LivePnl(strats, hist_at_1800=True)
+    frame = pnls(recap=True)
+    pnls.main_chat(frame)
+
+
+if __name__ == '__main__':
+    from app.config.config import init_config
+
+    try:
+        init_config()
+        main()
+    except Exception as exc:
+        chat.error('failed to run PnL', detail=repr(exc), conv_ids={Config.CHAT_ID})
+        # input('press enter to exit ...')
+
+........................................

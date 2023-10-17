@@ -1,0 +1,284 @@
+import asyncio
+import atexit
+import datetime
+import getpass
+import logging
+import os
+import platform
+from functools import singledispatch
+from typing import Any, Set
+from xml.sax.saxutils import escape
+
+import pandas
+
+from sylo.connection import get_atom, AtomClient
+
+logger = logging.getLogger(__name__)
+
+
+@singledispatch
+def format_msg_ml(obj: Any) -> str:
+    return escape(repr(obj))
+
+
+@format_msg_ml.register
+def format_msg_ml_str(msg: str) -> str:
+    if msg.startswith('<') and msg.endswith('>') and not msg.startswith('<_'):
+        return msg  # implicit raw XML
+    return escape(msg).replace('\n', '<br/>')
+
+
+@format_msg_ml.register
+def format_msg_ml_list(lst: list) -> str:
+    return '<br/>'.join(format_msg_ml(i) for i in lst)
+
+
+@format_msg_ml.register
+def format_msg_ml_dataframe(df: pandas.DataFrame) -> str:
+    border = pandas.options.display.html.border
+    return df.to_html(justify='unset', escape=True).replace(f' border="{border}"', '')
+
+
+LOG_LEVEL = {
+    logging.DEBUG: '<span style="background-color:#808080"><b>[debug]</b></span>',
+    logging.INFO: '<span style="background-color:#32CD32"><b>[info]</b></span>',
+    logging.WARNING: '<span style="background-color:#FFFF00"><b>[warning]</b></span>',
+    logging.ERROR: '<span style="background-color:#FF0000"><b>[error]</b></span>',
+}
+
+
+def get_std_conversation_ids() -> Set[str]:
+    return set(filter(None, os.getenv('SYMPHONY_STDOUT', '').split(',')))
+
+
+def get_err_conversation_ids() -> Set[str]:
+    return set(filter(None, os.getenv('SYMPHONY_STDOUT', '').split(',') + os.getenv('SYMPHONY_ERROR', '').split(',')))
+
+
+def format_chat_message(msg: Any, detail: Any, level: int) -> str:
+    tag = f'{getpass.getuser().lower()}-{os.getenv("ENV")}@{platform.node().lower()}'
+    msg_ml = f'{datetime.datetime.now()} {LOG_LEVEL[level]} <hash tag="{tag}"/>'
+    msg_ml += f'<br/>{format_msg_ml(msg)}'
+    if detail is not None:
+        msg_ml += f'<hr/><div style="margin-left:20px;margin-right:20px">{format_msg_ml(detail)}</div>'
+    return msg_ml
+
+
+def text(msg: Any, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_std_conversation_ids()
+    if not conv_ids:
+        return False
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    try:
+        return all(atom_client.symphony.send_chat_message(format_msg_ml(msg), conversation_id=cid) for cid in conv_ids)
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+async def text_async(msg: Any, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_std_conversation_ids()
+    if not conv_ids:
+        return False
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    reqs = (atom_client.symphony.send_chat_message_async(format_msg_ml(msg), conversation_id=cid) for cid in conv_ids)
+    try:
+        return all(await asyncio.gather(*reqs))
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+def debug(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_std_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.DEBUG)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    try:
+        return all(atom_client.symphony.send_chat_message(msg, conversation_id=cid) for cid in conv_ids)
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+async def debug_async(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_std_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.DEBUG)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    reqs = (atom_client.symphony.send_chat_message_async(msg, conversation_id=cid) for cid in conv_ids)
+    try:
+        return all(await asyncio.gather(*reqs))
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+def info(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_std_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.INFO)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    try:
+        return all(atom_client.symphony.send_chat_message(msg, conversation_id=cid) for cid in conv_ids)
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+async def info_async(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_std_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.INFO)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    reqs = (atom_client.symphony.send_chat_message_async(msg, conversation_id=cid) for cid in conv_ids)
+    try:
+        return all(await asyncio.gather(*reqs))
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+def warning(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_err_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.WARNING)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    try:
+        return all(atom_client.symphony.send_chat_message(msg, conversation_id=cid) for cid in conv_ids)
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+async def warning_async(msg: Any, detail: Any = None, conv_ids: Set[str] = None,
+                        atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_err_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.WARNING)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    reqs = (atom_client.symphony.send_chat_message_async(msg, conversation_id=cid) for cid in conv_ids)
+    try:
+        return all(await asyncio.gather(*reqs))
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+def error(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_err_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.ERROR)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    try:
+        return all(atom_client.symphony.send_chat_message(msg, conversation_id=cid) for cid in conv_ids)
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+async def error_async(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None) -> bool:
+    if conv_ids is None:
+        conv_ids = get_err_conversation_ids()
+    if not conv_ids:
+        return False
+    msg = format_chat_message(msg, detail=detail, level=logging.ERROR)
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    reqs = (atom_client.symphony.send_chat_message_async(msg, conversation_id=cid) for cid in conv_ids)
+    try:
+        return all(await asyncio.gather(*reqs))
+    except Exception as e:
+        logger.error(e)
+    return False
+
+
+def target(atom_client: AtomClient = None) -> str:
+    if atom_client is None:
+        atom_client = get_atom(os.environ['SYMPHONY_ENV'])
+    channel = atom_client.symphony.channel
+    for attr in ['_channel', '_channel']:
+        channel = getattr(channel, attr)
+    return channel.target().decode()
+
+
+def debug_atexit(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None):
+    atexit.register(debug, msg=msg, detail=detail, conv_ids=conv_ids, atom_client=atom_client)
+
+
+def info_atexit(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None):
+    atexit.register(info, msg=msg, detail=detail, conv_ids=conv_ids, atom_client=atom_client)
+
+
+def warning_atexit(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None):
+    atexit.register(warning, msg=msg, detail=detail, conv_ids=conv_ids, atom_client=atom_client)
+
+
+def error_atexit(msg: Any, detail: Any = None, conv_ids: Set[str] = None, atom_client: AtomClient = None):
+    atexit.register(error, msg=msg, detail=detail, conv_ids=conv_ids, atom_client=atom_client)
+
+
+class ChatManager:
+    def __init__(self, conv_ids: Set[str] = None, err_conv_ids: Set[str] = None, atom_client: AtomClient = None):
+        self.conv_ids = conv_ids or get_std_conversation_ids()
+        self.err_conv_ids = err_conv_ids or get_err_conversation_ids()
+        self.atom_client = atom_client or get_atom(os.getenv('SYMPHONY_ENV'))
+
+    def text(self, msg: Any) -> bool:
+        return text(msg=msg, conv_ids=self.conv_ids, atom_client=self.atom_client)
+
+    def debug(self, msg: Any, detail: Any = None) -> bool:
+        return debug(msg=msg, detail=detail, conv_ids=self.conv_ids, atom_client=self.atom_client)
+
+    def info(self, msg: Any, detail: Any = None) -> bool:
+        return info(msg=msg, detail=detail, conv_ids=self.conv_ids, atom_client=self.atom_client)
+
+    def warning(self, msg: Any, detail: Any = None) -> bool:
+        return warning(msg=msg, detail=detail, conv_ids=self.err_conv_ids, atom_client=self.atom_client)
+
+    def error(self, msg: Any, detail: Any = None) -> bool:
+        return error(msg=msg, detail=detail, conv_ids=self.err_conv_ids, atom_client=self.atom_client)
+
+    def target(self) -> str:
+        return target(atom_client=self.atom_client)
+
+    def debug_atexit(self, msg: Any, detail: Any = None):
+        return debug_atexit(msg=msg, detail=detail, conv_ids=self.conv_ids, atom_client=self.atom_client)
+
+    def info_atexit(self, msg: Any, detail: Any = None):
+        return info_atexit(msg=msg, detail=detail, conv_ids=self.conv_ids, atom_client=self.atom_client)
+
+    def warning_atexit(self, msg: Any, detail: Any = None):
+        return warning_atexit(msg=msg, detail=detail, conv_ids=self.err_conv_ids, atom_client=self.atom_client)
+
+    def error_atexit(self, msg: Any, detail: Any = None):
+        return error_atexit(msg=msg, detail=detail, conv_ids=self.err_conv_ids, atom_client=self.atom_client)
+
+
+if __name__ == '__main__':
+    pass
